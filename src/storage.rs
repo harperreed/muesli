@@ -101,6 +101,9 @@ pub fn read_frontmatter(md_path: &Path) -> Result<Option<Frontmatter>> {
         return Ok(None);
     }
 
+    if content.len() < 4 {
+        return Ok(None);
+    }
     let rest = &content[4..];
     if let Some(end_pos) = rest.find("\n---\n") {
         let yaml = &rest[..end_pos];
@@ -137,6 +140,22 @@ mod tests {
         assert!(paths.raw_dir.exists());
         assert!(paths.transcripts_dir.exists());
         assert!(paths.tmp_dir.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_ensure_dirs_sets_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TempDir::new().unwrap();
+        let paths = Paths::new(Some(temp.path().to_path_buf())).unwrap();
+        paths.ensure_dirs().unwrap();
+
+        let perms = fs::metadata(&paths.raw_dir).unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o700, "raw_dir should have 0o700 permissions");
+
+        let perms = fs::metadata(&paths.transcripts_dir).unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o700, "transcripts_dir should have 0o700 permissions");
     }
 }
 
