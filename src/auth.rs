@@ -1,5 +1,5 @@
 // ABOUTME: Token discovery with precedence chain
-// ABOUTME: CLI flag → env var → session files (macOS/XDG)
+// ABOUTME: CLI flag → env var → Granola session file (default)
 
 use crate::{Error, Result};
 use std::env;
@@ -17,35 +17,20 @@ pub fn resolve_token(cli_token: Option<String>) -> Result<String> {
         return Ok(token);
     }
 
-    // 3. macOS session file (default)
-    if let Some(token) = try_macos_session()? {
-        return Ok(token);
-    }
-
-    // 4. XDG session file (default)
-    if let Some(token) = try_xdg_session()? {
+    // 3. Granola session file (default)
+    if let Some(token) = try_session_file()? {
         return Ok(token);
     }
 
     Err(Error::Auth(
-        "No bearer token found. Provide via --token or BEARER_TOKEN env var, or use Granola session file".into(),
+        "No bearer token found. Provide via --token or BEARER_TOKEN env var, or log in to Granola".into(),
     ))
 }
 
-fn try_macos_session() -> Result<Option<String>> {
+fn try_session_file() -> Result<Option<String>> {
     let home = env::var("HOME").map_err(|_| Error::Auth("HOME not set".into()))?;
     let path = PathBuf::from(home).join("Library/Application Support/Granola/supabase.json");
 
-    parse_session_file(&path)
-}
-
-fn try_xdg_session() -> Result<Option<String>> {
-    let config_home = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-        let home = env::var("HOME").unwrap_or_default();
-        format!("{}/.config", home)
-    });
-
-    let path = PathBuf::from(config_home).join("granola/supabase.json");
     parse_session_file(&path)
 }
 
