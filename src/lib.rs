@@ -2,5 +2,7 @@
 // ABOUTME: Re-exports core modules for external use
 
 pub mod error;
+pub mod model;
 
 pub use error::{Error, Result};
+pub use model::{DocumentMetadata, DocumentSummary, Frontmatter, RawTranscript};
