@@ -11,6 +11,9 @@ pub mod storage;
 pub mod sync;
 pub mod util;
 
+#[cfg(feature = "index")]
+pub mod index;
+
 pub use api::ApiClient;
 pub use auth::resolve_token;
 pub use convert::{to_markdown, MarkdownOutput};
