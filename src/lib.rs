@@ -3,7 +3,9 @@
 
 pub mod error;
 pub mod model;
+pub mod storage;
 pub mod util;
 
 pub use error::{Error, Result};
 pub use model::{DocumentMetadata, DocumentSummary, Frontmatter, RawTranscript};
+pub use storage::{read_frontmatter, write_atomic, Paths};
