@@ -3,6 +3,7 @@
 
 pub mod error;
 pub mod model;
+pub mod util;
 
 pub use error::{Error, Result};
 pub use model::{DocumentMetadata, DocumentSummary, Frontmatter, RawTranscript};
