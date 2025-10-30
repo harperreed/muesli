@@ -81,7 +81,19 @@ impl ApiClient {
             });
         }
 
-        Ok(response.json()?)
+        // Get response text for better error messages
+        let body = response.text()?;
+        serde_json::from_str(&body).map_err(|e| {
+            eprintln!("Failed to parse response from {}: {}", endpoint, e);
+            eprintln!("Response body: {}",
+                if body.len() > 500 {
+                    format!("{}...", &body[..500])
+                } else {
+                    body.clone()
+                }
+            );
+            Error::Parse(e)
+        })
     }
 
     pub fn list_documents(&self) -> Result<Vec<DocumentSummary>> {

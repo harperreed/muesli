@@ -9,10 +9,14 @@ pub struct MarkdownOutput {
     pub body: String,
 }
 
-pub fn to_markdown(raw: &RawTranscript, meta: &DocumentMetadata) -> Result<MarkdownOutput> {
+pub fn to_markdown(
+    raw: &RawTranscript,
+    meta: &DocumentMetadata,
+    doc_id: &str,
+) -> Result<MarkdownOutput> {
     // Build frontmatter
     let frontmatter = Frontmatter {
-        doc_id: meta.id.clone(),
+        doc_id: doc_id.to_string(),
         source: "granola".into(),
         created_at: meta.created_at,
         remote_updated_at: meta.updated_at,
@@ -111,7 +115,7 @@ mod tests {
         };
 
         let meta = DocumentMetadata {
-            id: "doc123".into(),
+            id: Some("doc123".into()),
             title: Some("Test Meeting".into()),
             created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
             updated_at: None,
@@ -120,7 +124,7 @@ mod tests {
             labels: vec![],
         };
 
-        let output = to_markdown(&raw, &meta).unwrap();
+        let output = to_markdown(&raw, &meta, "doc123").unwrap();
 
         assert!(output.body.contains("# Test Meeting"));
         assert!(output.body.contains("**Alice (00:00:12):** Hello everyone"));
@@ -137,7 +141,7 @@ mod tests {
         };
 
         let meta = DocumentMetadata {
-            id: "doc123".into(),
+            id: Some("doc123".into()),
             title: None,
             created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
             updated_at: None,
@@ -146,7 +150,7 @@ mod tests {
             labels: vec![],
         };
 
-        let output = to_markdown(&raw, &meta).unwrap();
+        let output = to_markdown(&raw, &meta, "doc123").unwrap();
 
         assert!(output.body.contains("# Untitled Meeting"));
         assert!(output.body.contains("_No transcript content available._"));
@@ -177,7 +181,7 @@ mod snapshot_tests {
         };
 
         let meta = DocumentMetadata {
-            id: "doc456".into(),
+            id: Some("doc456".into()),
             title: Some("Planning Session".into()),
             created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
             updated_at: Some("2025-10-29T01:23:45Z".parse().unwrap()),
@@ -186,7 +190,7 @@ mod snapshot_tests {
             labels: vec!["Planning".into()],
         };
 
-        let output = to_markdown(&raw, &meta).unwrap();
+        let output = to_markdown(&raw, &meta, "doc456").unwrap();
         let full = format!("---\n{}---\n\n{}", output.frontmatter_yaml, output.body);
 
         insta::assert_snapshot!(full);

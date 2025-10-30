@@ -47,7 +47,7 @@ fn run() -> Result<()> {
             let base_filename = format!("{}_{}", date, slug);
 
             // Convert to markdown
-            let md = muesli::convert::to_markdown(&raw, &meta)?;
+            let md = muesli::convert::to_markdown(&raw, &meta, &id)?;
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
             // Write files

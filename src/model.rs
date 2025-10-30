@@ -45,7 +45,8 @@ mod tests {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
     pub created_at: DateTime<Utc>,

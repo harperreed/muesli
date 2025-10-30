@@ -41,7 +41,7 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
 
         let should_update = if md_path.exists() {
             if let Some(fm) = read_frontmatter(&md_path)? {
-                if fm.doc_id == meta.id {
+                if fm.doc_id == doc_summary.id {
                     // Same doc - check if remote is newer
                     let remote_ts = meta.updated_at.unwrap_or(meta.created_at);
                     let local_ts = fm.remote_updated_at.unwrap_or(fm.created_at);
@@ -62,10 +62,10 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
 
         if should_update {
             // Fetch transcript
-            let raw = client.get_transcript(&meta.id)?;
+            let raw = client.get_transcript(&doc_summary.id)?;
 
             // Convert to markdown
-            let md = to_markdown(&raw, &meta)?;
+            let md = to_markdown(&raw, &meta, &doc_summary.id)?;
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
             // Write files
