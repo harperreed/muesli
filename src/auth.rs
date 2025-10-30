@@ -1,5 +1,5 @@
 // ABOUTME: Token discovery with precedence chain
-// ABOUTME: CLI flag → macOS session → XDG session → env var
+// ABOUTME: CLI flag → env var → session files (macOS/XDG)
 
 use crate::{Error, Result};
 use std::env;
@@ -7,28 +7,28 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn resolve_token(cli_token: Option<String>) -> Result<String> {
-    // 1. CLI flag
+    // 1. CLI flag (explicit override)
     if let Some(token) = cli_token {
         return Ok(token);
     }
 
-    // 2. macOS session file
-    if let Some(token) = try_macos_session()? {
-        return Ok(token);
-    }
-
-    // 3. XDG session file
-    if let Some(token) = try_xdg_session()? {
-        return Ok(token);
-    }
-
-    // 4. Environment variable
+    // 2. Environment variable (explicit override)
     if let Ok(token) = env::var("BEARER_TOKEN") {
         return Ok(token);
     }
 
+    // 3. macOS session file (default)
+    if let Some(token) = try_macos_session()? {
+        return Ok(token);
+    }
+
+    // 4. XDG session file (default)
+    if let Some(token) = try_xdg_session()? {
+        return Ok(token);
+    }
+
     Err(Error::Auth(
-        "No bearer token found. Provide via --token, session file, or BEARER_TOKEN env var".into(),
+        "No bearer token found. Provide via --token or BEARER_TOKEN env var, or use Granola session file".into(),
     ))
 }
 
