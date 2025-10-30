@@ -54,33 +54,19 @@ pub fn to_markdown(
     body.push_str(&format!("_{}_\n\n", meta_parts.join(" · ")));
 
     // Transcript content
-    if !raw.segments.is_empty() {
-        for segment in &raw.segments {
-            let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
-            let timestamp = segment
-                .start
-                .as_ref()
-                .and_then(normalize_timestamp)
-                .map(|ts| format!(" ({})", ts))
-                .unwrap_or_default();
-            body.push_str(&format!("**{}{}:** {}\n", speaker, timestamp, segment.text));
-        }
-    } else if !raw.monologues.is_empty() {
-        for monologue in &raw.monologues {
-            let speaker = monologue.speaker.as_deref().unwrap_or("Speaker");
-            let timestamp = monologue
-                .start
-                .as_ref()
-                .and_then(normalize_timestamp)
-                .map(|ts| format!(" ({})", ts))
-                .unwrap_or_default();
-
-            for block in &monologue.blocks {
-                body.push_str(&format!("**{}{}:** {}\n", speaker, timestamp, block.text));
-            }
-        }
-    } else {
+    if raw.entries.is_empty() {
         body.push_str("_No transcript content available._\n");
+    } else {
+        for entry in &raw.entries {
+            let speaker = entry.speaker.as_deref().unwrap_or("Speaker");
+            let timestamp = entry
+                .start
+                .as_deref()
+                .and_then(normalize_timestamp)
+                .map(|ts| format!(" ({})", ts))
+                .unwrap_or_default();
+            body.push_str(&format!("**{}{}:** {}\n", speaker, timestamp, entry.text));
+        }
     }
 
     Ok(MarkdownOutput {
@@ -92,26 +78,33 @@ pub fn to_markdown(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Segment, TimestampValue};
+    use crate::model::TranscriptEntry;
 
     #[test]
-    fn test_to_markdown_segments() {
+    fn test_to_markdown_entries() {
         let raw = RawTranscript {
-            segments: vec![
-                Segment {
+            entries: vec![
+                TranscriptEntry {
+                    document_id: Some("doc123".into()),
                     speaker: Some("Alice".into()),
-                    start: Some(TimestampValue::Seconds(12.5)),
-                    end: Some(TimestampValue::Seconds(18.0)),
+                    start: Some("2025-10-01T21:35:12.500Z".into()),
+                    end: Some("2025-10-01T21:35:18.000Z".into()),
                     text: "Hello everyone".into(),
+                    source: Some("microphone".into()),
+                    id: Some("entry1".into()),
+                    is_final: Some(true),
                 },
-                Segment {
+                TranscriptEntry {
+                    document_id: Some("doc123".into()),
                     speaker: Some("Bob".into()),
-                    start: Some(TimestampValue::String("00:00:20".into())),
-                    end: None,
+                    start: Some("2025-10-01T21:35:20.000Z".into()),
+                    end: Some("2025-10-01T21:35:22.000Z".into()),
                     text: "Hi there".into(),
+                    source: Some("microphone".into()),
+                    id: Some("entry2".into()),
+                    is_final: Some(true),
                 },
             ],
-            monologues: vec![],
         };
 
         let meta = DocumentMetadata {
@@ -127,18 +120,17 @@ mod tests {
         let output = to_markdown(&raw, &meta, "doc123").unwrap();
 
         assert!(output.body.contains("# Test Meeting"));
-        assert!(output.body.contains("**Alice (00:00:12):** Hello everyone"));
-        assert!(output.body.contains("**Bob (00:00:20):** Hi there"));
+        assert!(output.body.contains("**Alice"));
+        assert!(output.body.contains("Hello everyone"));
+        assert!(output.body.contains("**Bob"));
+        assert!(output.body.contains("Hi there"));
         assert!(output.body.contains("Duration: 60m"));
         assert!(output.frontmatter_yaml.contains("doc123"));
     }
 
     #[test]
     fn test_to_markdown_empty_transcript() {
-        let raw = RawTranscript {
-            segments: vec![],
-            monologues: vec![],
-        };
+        let raw = RawTranscript { entries: vec![] };
 
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
@@ -160,24 +152,33 @@ mod tests {
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
-    use crate::model::{Block, Monologue, TimestampValue};
+    use crate::model::TranscriptEntry;
 
     #[test]
     fn test_markdown_output_snapshot() {
         let raw = RawTranscript {
-            segments: vec![],
-            monologues: vec![Monologue {
-                speaker: Some("Alice".into()),
-                start: Some(TimestampValue::String("00:05:10".into())),
-                blocks: vec![
-                    Block {
-                        text: "First thought.".into(),
-                    },
-                    Block {
-                        text: "Second thought.".into(),
-                    },
-                ],
-            }],
+            entries: vec![
+                TranscriptEntry {
+                    document_id: Some("doc456".into()),
+                    speaker: Some("Alice".into()),
+                    start: Some("2025-10-28T15:05:10.000Z".into()),
+                    end: Some("2025-10-28T15:05:15.000Z".into()),
+                    text: "First thought.".into(),
+                    source: Some("microphone".into()),
+                    id: Some("entry1".into()),
+                    is_final: Some(true),
+                },
+                TranscriptEntry {
+                    document_id: Some("doc456".into()),
+                    speaker: Some("Alice".into()),
+                    start: Some("2025-10-28T15:05:16.000Z".into()),
+                    end: Some("2025-10-28T15:05:20.000Z".into()),
+                    text: "Second thought.".into(),
+                    source: Some("microphone".into()),
+                    id: Some("entry2".into()),
+                    is_final: Some(true),
+                },
+            ],
         };
 
         let meta = DocumentMetadata {

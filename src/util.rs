@@ -2,6 +2,7 @@
 // ABOUTME: Provides consistent filename generation and time formatting
 
 use crate::model::TimestampValue;
+use chrono::{DateTime, Utc};
 
 pub fn slugify(text: &str) -> String {
     let slug = slug::slugify(text);
@@ -32,7 +33,25 @@ mod tests {
     }
 }
 
-pub fn normalize_timestamp(ts: &TimestampValue) -> Option<String> {
+pub fn normalize_timestamp(ts: &str) -> Option<String> {
+    // Try to parse as ISO 8601 datetime
+    if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
+        // Extract time portion and format as HH:MM:SS
+        return Some(dt.format("%H:%M:%S").to_string());
+    }
+
+    // Fallback: try to parse as HH:MM:SS or HH:MM:SS.sss
+    if let Some(pos) = ts.find('.') {
+        Some(ts[..pos].to_string())
+    } else if ts.contains(':') {
+        Some(ts.to_string())
+    } else {
+        None
+    }
+}
+
+// Legacy function for backward compatibility with old TimestampValue
+pub fn normalize_timestamp_legacy(ts: &TimestampValue) -> Option<String> {
     match ts {
         TimestampValue::Seconds(secs) => {
             let total_secs = *secs as u64;
@@ -41,14 +60,7 @@ pub fn normalize_timestamp(ts: &TimestampValue) -> Option<String> {
             let seconds = total_secs % 60;
             Some(format!("{:02}:{:02}:{:02}", hours, minutes, seconds))
         }
-        TimestampValue::String(s) => {
-            // Try to parse and normalize HH:MM:SS.sss -> HH:MM:SS
-            if let Some(pos) = s.find('.') {
-                Some(s[..pos].to_string())
-            } else {
-                Some(s.clone())
-            }
-        }
+        TimestampValue::String(s) => normalize_timestamp(s),
     }
 }
 
@@ -58,20 +70,32 @@ mod timestamp_tests {
     use crate::model::TimestampValue;
 
     #[test]
-    fn test_normalize_timestamp_seconds() {
+    fn test_normalize_timestamp_iso8601() {
+        assert_eq!(
+            normalize_timestamp("2025-10-01T21:35:24.568Z"),
+            Some("21:35:24".into())
+        );
+        assert_eq!(
+            normalize_timestamp("2025-10-01T09:05:10.000Z"),
+            Some("09:05:10".into())
+        );
+    }
+
+    #[test]
+    fn test_normalize_timestamp_hms() {
+        assert_eq!(normalize_timestamp("00:12:34.567"), Some("00:12:34".into()));
+        assert_eq!(normalize_timestamp("00:05:10"), Some("00:05:10".into()));
+    }
+
+    #[test]
+    fn test_normalize_timestamp_legacy_seconds() {
         let ts = TimestampValue::Seconds(3665.5);
-        assert_eq!(normalize_timestamp(&ts), Some("01:01:05".into()));
+        assert_eq!(normalize_timestamp_legacy(&ts), Some("01:01:05".into()));
     }
 
     #[test]
-    fn test_normalize_timestamp_string() {
+    fn test_normalize_timestamp_legacy_string() {
         let ts = TimestampValue::String("00:12:34.567".into());
-        assert_eq!(normalize_timestamp(&ts), Some("00:12:34".into()));
-    }
-
-    #[test]
-    fn test_normalize_timestamp_string_no_subseconds() {
-        let ts = TimestampValue::String("00:05:10".into());
-        assert_eq!(normalize_timestamp(&ts), Some("00:05:10".into()));
+        assert_eq!(normalize_timestamp_legacy(&ts), Some("00:12:34".into()));
     }
 }

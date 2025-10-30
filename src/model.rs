@@ -83,13 +83,31 @@ mod metadata_tests {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct RawTranscript {
-    #[serde(default)]
-    pub segments: Vec<Segment>,
-    #[serde(default)]
-    pub monologues: Vec<Monologue>,
+    pub entries: Vec<TranscriptEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptEntry {
+    #[serde(default)]
+    pub document_id: Option<String>,
+    #[serde(rename = "start_timestamp", default)]
+    pub start: Option<String>,
+    #[serde(rename = "end_timestamp", default)]
+    pub end: Option<String>,
+    pub text: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub is_final: Option<bool>,
+    #[serde(default)]
+    pub speaker: Option<String>,
+}
+
+// Legacy types kept for backward compatibility with tests
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Segment {
     #[serde(default)]
@@ -127,27 +145,34 @@ mod transcript_tests {
     use super::*;
 
     #[test]
-    fn test_raw_transcript_segments() {
-        let json = r#"{
-            "segments": [
-                {"speaker": "Alice", "start": 12.34, "end": 18.90, "text": "Hello"}
-            ]
-        }"#;
+    fn test_raw_transcript_deserialize() {
+        let json = r#"[
+            {
+                "document_id": "doc123",
+                "speaker": "Alice",
+                "start_timestamp": "2025-10-01T21:35:12.500Z",
+                "end_timestamp": "2025-10-01T21:35:18.000Z",
+                "text": "Hello",
+                "source": "microphone",
+                "id": "entry1",
+                "is_final": true
+            }
+        ]"#;
         let transcript: RawTranscript = serde_json::from_str(json).unwrap();
-        assert_eq!(transcript.segments.len(), 1);
-        assert_eq!(transcript.segments[0].text, "Hello");
+        assert_eq!(transcript.entries.len(), 1);
+        assert_eq!(transcript.entries[0].text, "Hello");
+        assert_eq!(transcript.entries[0].speaker.as_deref(), Some("Alice"));
     }
 
     #[test]
-    fn test_raw_transcript_monologues() {
-        let json = r#"{
-            "monologues": [
-                {"speaker": "Bob", "start": "00:05:10", "blocks": [{"text": "First"}, {"text": "Second"}]}
-            ]
-        }"#;
+    fn test_raw_transcript_minimal() {
+        let json = r#"[
+            {"text": "Just text"}
+        ]"#;
         let transcript: RawTranscript = serde_json::from_str(json).unwrap();
-        assert_eq!(transcript.monologues.len(), 1);
-        assert_eq!(transcript.monologues[0].blocks.len(), 2);
+        assert_eq!(transcript.entries.len(), 1);
+        assert_eq!(transcript.entries[0].text, "Just text");
+        assert!(transcript.entries[0].speaker.is_none());
     }
 }
 
