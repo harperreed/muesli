@@ -10,8 +10,20 @@ use crate::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 
+#[cfg(feature = "index")]
+use crate::index::text;
+
 pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
     paths.ensure_dirs()?;
+
+    // Create or open the index and writer (feature-gated)
+    #[cfg(feature = "index")]
+    let (index, mut writer) = {
+        let idx = text::create_or_open_index(&paths.index_dir)?;
+        let wtr = idx.writer(50_000_000)
+            .map_err(|e| crate::Error::Indexing(format!("Failed to create index writer: {}", e)))?;
+        (idx, wtr)
+    };
 
     println!("Fetching document list...");
     let docs = client.list_documents()?;
@@ -75,6 +87,23 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
             write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
             write_atomic(&md_path, full_md.as_bytes(), &paths.tmp_dir)?;
 
+            // Index the document (feature-gated, non-fatal)
+            #[cfg(feature = "index")]
+            {
+                let date_str = date.clone();
+                if let Err(e) = text::index_markdown_batch(
+                    &mut writer,
+                    &index,
+                    &doc_summary.id,
+                    meta.title.as_deref(),
+                    &date_str,
+                    &md.body,
+                    &md_path,
+                ) {
+                    eprintln!("Warning: Failed to index document {}: {}", doc_summary.id, e);
+                }
+            }
+
             synced += 1;
         } else {
             skipped += 1;
@@ -90,5 +119,71 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
         skipped
     ));
 
+    // Commit all indexed documents in one batch (feature-gated)
+    #[cfg(feature = "index")]
+    {
+        if synced > 0 {
+            if let Err(e) = writer.commit() {
+                eprintln!("Warning: Failed to commit index changes: {}", e);
+            } else {
+                println!("Indexed {} documents", synced);
+            }
+        }
+    }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::Paths;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_sync_creates_index_directory() {
+        // Verify that sync operation creates the index directory structure
+        let temp = TempDir::new().unwrap();
+        let paths = Paths::new(Some(temp.path().to_path_buf())).unwrap();
+
+        // Call ensure_dirs to set up directory structure
+        paths.ensure_dirs().unwrap();
+
+        // Verify index directory exists at the correct path
+        assert!(
+            paths.index_dir.exists(),
+            "index_dir should exist at {}",
+            paths.index_dir.display()
+        );
+
+        // Verify it's the tantivy subdirectory
+        assert!(
+            paths.index_dir.ends_with("index/tantivy"),
+            "index_dir should end with 'index/tantivy', got {}",
+            paths.index_dir.display()
+        );
+    }
+}
+
+#[cfg(all(test, feature = "index"))]
+mod index_tests {
+    use crate::index::text::create_or_open_index;
+    use crate::storage::Paths;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_index_integration_with_sync() {
+        // Test that the index directory path works with the indexing module
+        let temp = TempDir::new().unwrap();
+        let paths = Paths::new(Some(temp.path().to_path_buf())).unwrap();
+        paths.ensure_dirs().unwrap();
+
+        // Verify we can create an index at the configured path
+        let index = create_or_open_index(&paths.index_dir).unwrap();
+        let schema = index.schema();
+
+        // Verify schema has required fields
+        assert!(schema.get_field("doc_id").is_ok());
+        assert!(schema.get_field("title").is_ok());
+        assert!(schema.get_field("body").is_ok());
+    }
 }

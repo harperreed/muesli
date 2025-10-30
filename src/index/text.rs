@@ -41,7 +41,32 @@ pub fn create_or_open_index(index_dir: &Path) -> Result<Index> {
 }
 
 /// Indexes a markdown document with upsert semantics (delete old + insert new)
+/// This function creates its own writer and commits immediately.
+/// For batch operations, use `index_markdown_batch` instead.
 pub fn index_markdown(
+    index: &Index,
+    doc_id: &str,
+    title: Option<&str>,
+    date: &str,
+    body: &str,
+    path: &Path,
+) -> Result<()> {
+    let mut writer = index.writer(50_000_000)
+        .map_err(|e| Error::Indexing(format!("Failed to create index writer: {}", e)))?;
+
+    index_markdown_batch(&mut writer, index, doc_id, title, date, body, path)?;
+
+    // Commit the changes
+    writer.commit()
+        .map_err(|e| Error::Indexing(format!("Failed to commit: {}", e)))?;
+
+    Ok(())
+}
+
+/// Indexes a markdown document using an existing writer (for batch operations)
+/// Does not commit - caller must call writer.commit() when ready
+pub fn index_markdown_batch(
+    writer: &mut tantivy::IndexWriter,
     index: &Index,
     doc_id: &str,
     title: Option<&str>,
@@ -61,10 +86,6 @@ pub fn index_markdown(
         .map_err(|e| Error::Indexing(format!("Missing body field: {}", e)))?;
     let path_field = schema.get_field("path")
         .map_err(|e| Error::Indexing(format!("Missing path field: {}", e)))?;
-
-    // Get or create index writer
-    let mut writer = index.writer(50_000_000)
-        .map_err(|e| Error::Indexing(format!("Failed to create index writer: {}", e)))?;
 
     // Delete any existing document with the same doc_id (upsert)
     let term = Term::from_field_text(doc_id_field, doc_id);
@@ -88,10 +109,6 @@ pub fn index_markdown(
     // Add the document
     writer.add_document(document)
         .map_err(|e| Error::Indexing(format!("Failed to add document: {}", e)))?;
-
-    // Commit the changes
-    writer.commit()
-        .map_err(|e| Error::Indexing(format!("Failed to commit: {}", e)))?;
 
     Ok(())
 }

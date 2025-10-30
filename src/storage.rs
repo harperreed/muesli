@@ -36,7 +36,7 @@ impl Paths {
             raw_dir: data_dir.join("raw"),
             transcripts_dir: data_dir.join("transcripts"),
             summaries_dir: data_dir.join("summaries"),
-            index_dir: data_dir.join("index"),
+            index_dir: data_dir.join("index").join("tantivy"),
             models_dir: data_dir.join("models"),
             tmp_dir: data_dir.join("tmp"),
             data_dir,
