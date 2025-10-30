@@ -8,6 +8,7 @@ pub mod convert;
 pub mod error;
 pub mod model;
 pub mod storage;
+pub mod sync;
 pub mod util;
 
 pub use api::ApiClient;
@@ -16,3 +17,4 @@ pub use convert::{to_markdown, MarkdownOutput};
 pub use error::{Error, Result};
 pub use model::{DocumentMetadata, DocumentSummary, Frontmatter, RawTranscript};
 pub use storage::{read_frontmatter, write_atomic, Paths};
+pub use sync::sync_all;

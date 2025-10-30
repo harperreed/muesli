@@ -2,7 +2,9 @@
 // ABOUTME: Handles error exit codes and command dispatch
 
 use clap::Parser;
-use muesli::{cli::Cli, Result};
+use muesli::{
+    api::ApiClient, auth::resolve_token, cli::Cli, storage::Paths, sync::sync_all, Result,
+};
 
 fn main() {
     if let Err(e) = run() {
@@ -16,7 +18,17 @@ fn run() -> Result<()> {
 
     match cli.command() {
         muesli::cli::Commands::Sync => {
-            println!("Sync command - not yet implemented");
+            let token = resolve_token(cli.token)?;
+            let mut client = ApiClient::new(token, Some(cli.api_base))?;
+
+            if cli.no_throttle {
+                client = client.disable_throttle();
+            } else if let Some((min, max)) = cli.throttle_ms {
+                client = client.with_throttle(min, max);
+            }
+
+            let paths = Paths::new(cli.data_dir)?;
+            sync_all(&client, &paths)?;
         }
         muesli::cli::Commands::List => {
             println!("List command - not yet implemented");
