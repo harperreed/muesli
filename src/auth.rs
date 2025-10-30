@@ -27,23 +27,23 @@ pub fn resolve_token(cli_token: Option<String>) -> Result<String> {
         return Ok(token);
     }
 
-    Err(Error::Auth("No bearer token found. Provide via --token, session file, or BEARER_TOKEN env var".into()))
+    Err(Error::Auth(
+        "No bearer token found. Provide via --token, session file, or BEARER_TOKEN env var".into(),
+    ))
 }
 
 fn try_macos_session() -> Result<Option<String>> {
     let home = env::var("HOME").map_err(|_| Error::Auth("HOME not set".into()))?;
-    let path = PathBuf::from(home)
-        .join("Library/Application Support/Granola/supabase.json");
+    let path = PathBuf::from(home).join("Library/Application Support/Granola/supabase.json");
 
     parse_session_file(&path)
 }
 
 fn try_xdg_session() -> Result<Option<String>> {
-    let config_home = env::var("XDG_CONFIG_HOME")
-        .unwrap_or_else(|_| {
-            let home = env::var("HOME").unwrap_or_default();
-            format!("{}/.config", home)
-        });
+    let config_home = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+        let home = env::var("HOME").unwrap_or_default();
+        format!("{}/.config", home)
+    });
 
     let path = PathBuf::from(config_home).join("granola/supabase.json");
     parse_session_file(&path)

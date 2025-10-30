@@ -18,26 +18,12 @@ fn run() -> Result<()> {
 
     match cli.command() {
         muesli::cli::Commands::Sync => {
-            let token = resolve_token(cli.token)?;
-            let mut client = ApiClient::new(token, Some(cli.api_base))?;
-
-            if cli.no_throttle {
-                client = client.disable_throttle();
-            } else if let Some((min, max)) = cli.throttle_ms {
-                client = client.with_throttle(min, max);
-            }
-
+            let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
             sync_all(&client, &paths)?;
         }
         muesli::cli::Commands::List => {
-            let token = resolve_token(cli.token)?;
-            let mut client = ApiClient::new(token, Some(cli.api_base))?;
-
-            if cli.no_throttle {
-                client = client.disable_throttle();
-            }
-
+            let client = create_client(&cli)?;
             let docs = client.list_documents()?;
 
             for doc in docs {
@@ -47,13 +33,7 @@ fn run() -> Result<()> {
             }
         }
         muesli::cli::Commands::Fetch { id } => {
-            let token = resolve_token(cli.token)?;
-            let mut client = ApiClient::new(token, Some(cli.api_base))?;
-
-            if cli.no_throttle {
-                client = client.disable_throttle();
-            }
-
+            let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
             paths.ensure_dirs()?;
 
@@ -84,4 +64,18 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Creates an API client with auth and throttle configuration from CLI flags.
+fn create_client(cli: &Cli) -> Result<ApiClient> {
+    let token = resolve_token(cli.token.clone())?;
+    let mut client = ApiClient::new(token, Some(cli.api_base.clone()))?;
+
+    if cli.no_throttle {
+        client = client.disable_throttle();
+    } else if let Some((min, max)) = cli.throttle_ms {
+        client = client.with_throttle(min, max);
+    }
+
+    Ok(client)
 }

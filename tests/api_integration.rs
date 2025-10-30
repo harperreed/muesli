@@ -1,6 +1,6 @@
 use muesli::api::ApiClient;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path, header};
+use wiremock::matchers::{header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
 async fn test_list_documents_success() {
@@ -32,7 +32,9 @@ async fn test_list_documents_success() {
             .unwrap()
             .disable_throttle();
         client.list_documents()
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     let docs = result.unwrap();
     assert_eq!(docs.len(), 1);
@@ -57,7 +59,9 @@ async fn test_api_error_handling() {
             .unwrap()
             .disable_throttle();
         client.list_documents()
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     assert!(result.is_err());
 

@@ -4,7 +4,13 @@
 use crate::model::TimestampValue;
 
 pub fn slugify(text: &str) -> String {
-    slug::slugify(text)
+    let slug = slug::slugify(text);
+    // Handle empty slugs (happens when title is only special chars)
+    if slug.is_empty() {
+        "untitled".to_string()
+    } else {
+        slug
+    }
 }
 
 #[cfg(test)]
@@ -15,13 +21,14 @@ mod tests {
     fn test_slugify_basic() {
         assert_eq!(slugify("Hello World"), "hello-world");
         assert_eq!(slugify("Q4 Planning!!!"), "q4-planning");
-        assert_eq!(slugify(""), "");
+        assert_eq!(slugify(""), "untitled");
     }
 
     #[test]
     fn test_slugify_special_chars() {
         assert_eq!(slugify("Föö Bär"), "foo-bar");
         assert_eq!(slugify("Test@#$%123"), "test-123");
+        assert_eq!(slugify("!!!@@@###"), "untitled"); // Only special chars
     }
 }
 

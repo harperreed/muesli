@@ -1,8 +1,8 @@
 // ABOUTME: Converts raw transcript JSON to structured Markdown
 // ABOUTME: Supports both segment and monologue formats with frontmatter
 
-use crate::{DocumentMetadata, Frontmatter, RawTranscript, Result};
 use crate::util::normalize_timestamp;
+use crate::{DocumentMetadata, Frontmatter, RawTranscript, Result};
 
 pub struct MarkdownOutput {
     pub frontmatter_yaml: String,
@@ -23,11 +23,12 @@ pub fn to_markdown(raw: &RawTranscript, meta: &DocumentMetadata) -> Result<Markd
         generator: "muesli 1.0".into(),
     };
 
-    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
-        .map_err(|e| crate::Error::Filesystem(std::io::Error::new(
+    let frontmatter_yaml = serde_yaml::to_string(&frontmatter).map_err(|e| {
+        crate::Error::Filesystem(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Failed to serialize frontmatter: {}", e)
-        )))?;
+            format!("Failed to serialize frontmatter: {}", e),
+        ))
+    })?;
 
     // Build body
     let title = meta.title.as_deref().unwrap_or("Untitled Meeting");
@@ -52,7 +53,9 @@ pub fn to_markdown(raw: &RawTranscript, meta: &DocumentMetadata) -> Result<Markd
     if !raw.segments.is_empty() {
         for segment in &raw.segments {
             let speaker = segment.speaker.as_deref().unwrap_or("Speaker");
-            let timestamp = segment.start.as_ref()
+            let timestamp = segment
+                .start
+                .as_ref()
                 .and_then(normalize_timestamp)
                 .map(|ts| format!(" ({})", ts))
                 .unwrap_or_default();
@@ -61,7 +64,9 @@ pub fn to_markdown(raw: &RawTranscript, meta: &DocumentMetadata) -> Result<Markd
     } else if !raw.monologues.is_empty() {
         for monologue in &raw.monologues {
             let speaker = monologue.speaker.as_deref().unwrap_or("Speaker");
-            let timestamp = monologue.start.as_ref()
+            let timestamp = monologue
+                .start
+                .as_ref()
                 .and_then(normalize_timestamp)
                 .map(|ts| format!(" ({})", ts))
                 .unwrap_or_default();
@@ -151,22 +156,24 @@ mod tests {
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
-    use crate::model::{Monologue, Block, TimestampValue};
+    use crate::model::{Block, Monologue, TimestampValue};
 
     #[test]
     fn test_markdown_output_snapshot() {
         let raw = RawTranscript {
             segments: vec![],
-            monologues: vec![
-                Monologue {
-                    speaker: Some("Alice".into()),
-                    start: Some(TimestampValue::String("00:05:10".into())),
-                    blocks: vec![
-                        Block { text: "First thought.".into() },
-                        Block { text: "Second thought.".into() },
-                    ],
-                },
-            ],
+            monologues: vec![Monologue {
+                speaker: Some("Alice".into()),
+                start: Some(TimestampValue::String("00:05:10".into())),
+                blocks: vec![
+                    Block {
+                        text: "First thought.".into(),
+                    },
+                    Block {
+                        text: "Second thought.".into(),
+                    },
+                ],
+            }],
         };
 
         let meta = DocumentMetadata {

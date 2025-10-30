@@ -2,8 +2,11 @@
 // ABOUTME: Handles update detection and progress reporting
 
 use crate::{
-    api::ApiClient, convert::to_markdown, storage::{read_frontmatter, write_atomic, Paths},
-    util::slugify, Result,
+    api::ApiClient,
+    convert::to_markdown,
+    storage::{read_frontmatter, write_atomic, Paths},
+    util::slugify,
+    Result,
 };
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -80,7 +83,12 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
         pb.inc(1);
     }
 
-    pb.finish_with_message(format!("synced {} docs ({} new/updated, {} skipped)", docs.len(), synced, skipped));
+    pb.finish_with_message(format!(
+        "synced {} docs ({} new/updated, {} skipped)",
+        docs.len(),
+        synced,
+        skipped
+    ));
 
     Ok(())
 }

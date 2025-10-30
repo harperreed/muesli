@@ -17,9 +17,7 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(token: String, base_url: Option<String>) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
         Ok(ApiClient {
             client,
@@ -49,10 +47,15 @@ impl ApiClient {
         }
     }
 
-    fn post<T: serde::de::DeserializeOwned>(&self, endpoint: &str, body: serde_json::Value) -> Result<T> {
+    fn post<T: serde::de::DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        body: serde_json::Value,
+    ) -> Result<T> {
         let url = format!("{}{}", self.base_url, endpoint);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Accept", "application/json")
@@ -92,11 +95,17 @@ impl ApiClient {
     }
 
     pub fn get_metadata(&self, doc_id: &str) -> Result<DocumentMetadata> {
-        self.post("/v1/get-document-metadata", json!({ "document_id": doc_id }))
+        self.post(
+            "/v1/get-document-metadata",
+            json!({ "document_id": doc_id }),
+        )
     }
 
     pub fn get_transcript(&self, doc_id: &str) -> Result<RawTranscript> {
-        self.post("/v1/get-document-transcript", json!({ "document_id": doc_id }))
+        self.post(
+            "/v1/get-document-transcript",
+            json!({ "document_id": doc_id }),
+        )
     }
 }
 

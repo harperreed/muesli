@@ -22,10 +22,12 @@ impl Paths {
             dir
         } else {
             ProjectDirs::from("", "", "muesli")
-                .ok_or_else(|| Error::Filesystem(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Could not determine data directory"
-                )))?
+                .ok_or_else(|| {
+                    Error::Filesystem(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Could not determine data directory",
+                    ))
+                })?
                 .data_dir()
                 .to_path_buf()
         };
@@ -107,11 +109,12 @@ pub fn read_frontmatter(md_path: &Path) -> Result<Option<Frontmatter>> {
     let rest = &content[4..];
     if let Some(end_pos) = rest.find("\n---\n") {
         let yaml = &rest[..end_pos];
-        let fm: Frontmatter = serde_yaml::from_str(yaml)
-            .map_err(|e| Error::Filesystem(std::io::Error::new(
+        let fm: Frontmatter = serde_yaml::from_str(yaml).map_err(|e| {
+            Error::Filesystem(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to parse frontmatter: {}", e)
-            )))?;
+                format!("Failed to parse frontmatter: {}", e),
+            ))
+        })?;
         Ok(Some(fm))
     } else {
         Ok(None)
@@ -152,10 +155,18 @@ mod tests {
         paths.ensure_dirs().unwrap();
 
         let perms = fs::metadata(&paths.raw_dir).unwrap().permissions();
-        assert_eq!(perms.mode() & 0o777, 0o700, "raw_dir should have 0o700 permissions");
+        assert_eq!(
+            perms.mode() & 0o777,
+            0o700,
+            "raw_dir should have 0o700 permissions"
+        );
 
         let perms = fs::metadata(&paths.transcripts_dir).unwrap().permissions();
-        assert_eq!(perms.mode() & 0o777, 0o700, "transcripts_dir should have 0o700 permissions");
+        assert_eq!(
+            perms.mode() & 0o777,
+            0o700,
+            "transcripts_dir should have 0o700 permissions"
+        );
     }
 }
 
