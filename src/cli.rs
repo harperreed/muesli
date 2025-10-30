@@ -62,6 +62,17 @@ pub enum Commands {
         /// Document ID to fetch
         id: String,
     },
+
+    /// Search indexed documents (requires 'index' feature)
+    #[cfg(feature = "index")]
+    Search {
+        /// Search query string
+        query: String,
+
+        /// Maximum number of results to return
+        #[arg(short = 'n', long, default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 impl Cli {

@@ -61,6 +61,35 @@ fn run() -> Result<()> {
             println!("wrote {}", json_path.display());
             println!("wrote {}", md_path.display());
         }
+        #[cfg(feature = "index")]
+        muesli::cli::Commands::Search { query, limit } => {
+            let paths = Paths::new(cli.data_dir)?;
+            let index_dir = paths.data_dir.join("index");
+
+            // Check if index exists
+            if !index_dir.exists() {
+                eprintln!("No index found. Run 'muesli sync' first to build the index.");
+                std::process::exit(1);
+            }
+
+            // Open the index
+            let index = muesli::index::text::create_or_open_index(&index_dir)?;
+
+            // Perform the search
+            let results = muesli::index::text::search(&index, &query, limit)?;
+
+            // Handle empty results
+            if results.is_empty() {
+                println!("No results found for: {}", query);
+                return Ok(());
+            }
+
+            // Display results
+            for (rank, result) in results.iter().enumerate() {
+                let title = result.title.as_deref().unwrap_or("Untitled");
+                println!("{}. {} ({})  {}", rank + 1, title, result.date, result.path);
+            }
+        }
     }
 
     Ok(())
