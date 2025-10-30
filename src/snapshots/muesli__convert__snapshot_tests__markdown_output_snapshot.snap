@@ -1,0 +1,25 @@
+---
+source: src/convert.rs
+expression: full
+---
+---
+doc_id: doc456
+source: granola
+created_at: 2025-10-28T15:04:05Z
+remote_updated_at: 2025-10-29T01:23:45Z
+title: Planning Session
+participants:
+- Alice
+- Bob
+duration_seconds: 3170
+labels:
+- Planning
+generator: muesli 1.0
+---
+
+# Planning Session
+
+_Date: 2025-10-28 · Duration: 52m · Participants: Alice, Bob_
+
+**Alice (00:05:10):** First thought.
+**Alice (00:05:10):** Second thought.
