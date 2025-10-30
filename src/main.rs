@@ -64,16 +64,15 @@ fn run() -> Result<()> {
         #[cfg(feature = "index")]
         muesli::cli::Commands::Search { query, limit } => {
             let paths = Paths::new(cli.data_dir)?;
-            let index_dir = paths.data_dir.join("index");
 
             // Check if index exists
-            if !index_dir.exists() {
+            if !paths.index_dir.exists() {
                 eprintln!("No index found. Run 'muesli sync' first to build the index.");
                 std::process::exit(1);
             }
 
             // Open the index
-            let index = muesli::index::text::create_or_open_index(&index_dir)?;
+            let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
 
             // Perform the search
             let results = muesli::index::text::search(&index, &query, limit)?;
