@@ -29,6 +29,9 @@ pub enum Error {
 
     #[error("Indexing error: {0}")]
     Indexing(String),
+
+    #[error("Embedding error: {0}")]
+    Embedding(String),
 }
 
 impl Error {
@@ -41,6 +44,7 @@ impl Error {
             Error::Filesystem(_) => 6,
             Error::Summarization(_) => 7,
             Error::Indexing(_) => 8,
+            Error::Embedding(_) => 9,
         }
     }
 }

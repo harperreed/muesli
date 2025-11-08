@@ -14,6 +14,12 @@ pub mod util;
 #[cfg(feature = "index")]
 pub mod index;
 
+#[cfg(feature = "embeddings")]
+pub mod embeddings;
+
+#[cfg(feature = "summaries")]
+pub mod summary;
+
 pub use api::ApiClient;
 pub use auth::resolve_token;
 pub use convert::{to_markdown, MarkdownOutput};

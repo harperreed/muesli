@@ -72,6 +72,11 @@ pub enum Commands {
         /// Maximum number of results to return
         #[arg(short = 'n', long, default_value_t = 10)]
         limit: usize,
+
+        /// Use semantic search with embeddings (requires 'embeddings' feature)
+        #[arg(long)]
+        #[cfg(feature = "embeddings")]
+        semantic: bool,
     },
 }
 

@@ -2,6 +2,7 @@
 name = "muesli"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70"
 
 [[bin]]
 name = "muesli"
@@ -12,20 +13,29 @@ name = "muesli"
 path = "src/lib.rs"
 
 [dependencies]
-thiserror = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "gzip"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-reqwest = { version = "0.12", features = ["blocking", "json", "gzip"] }
-clap = { version = "4.5", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 directories = "5.0"
 slug = "0.1"
 indicatif = "0.17"
 rand = "0.8"
+anyhow = "1.0"
+thiserror = "1.0"
 
-# Optional dependencies (feature-gated)
+# Optional features (will add later)
+keyring = { version = "2.3", optional = true }
+async-openai = { version = "0.20", optional = true }
+tokio = { version = "1.37", features = ["rt", "macros"], optional = true }
 tantivy = { version = "0.22", optional = true }
+ort = { version = "2.0.0-rc.10", optional = true, default-features = false, features = ["download-binaries"] }
+tokenizers = { version = "0.19", optional = true }
+rayon = { version = "1.10", optional = true }
+hnsw_rs = { version = "0.3", optional = true }
+ndarray = { version = "0.15", optional = true }
 
 [dev-dependencies]
 wiremock = "0.6"
@@ -36,8 +46,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = []
+summaries = ["dep:keyring", "dep:async-openai", "dep:tokio"]
 index = ["dep:tantivy"]
-# Additional features will be activated in later milestones
-# embeddings-local = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs"]
-# summaries = ["dep:keyring"]
-# full = ["index", "embeddings-local", "summaries"]
+embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", "dep:ndarray"]

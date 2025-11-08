@@ -7,6 +7,24 @@ use reqwest::blocking::Client;
 use serde_json::json;
 use std::time::Duration;
 
+fn truncate_str(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        return s.to_string();
+    }
+
+    // Find a valid UTF-8 boundary at or before max_chars
+    let mut boundary = max_chars;
+    while boundary > 0 && !s.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+
+    if boundary == 0 {
+        return String::new();
+    }
+
+    format!("{}...", &s[..boundary])
+}
+
 pub struct ApiClient {
     client: Client,
     base_url: String,
@@ -69,11 +87,7 @@ impl ApiClient {
         let status = response.status();
         if !status.is_success() {
             let message = response.text().unwrap_or_default();
-            let preview = if message.len() > 100 {
-                format!("{}...", &message[..100])
-            } else {
-                message
-            };
+            let preview = truncate_str(&message, 100);
             return Err(Error::Api {
                 endpoint: endpoint.into(),
                 status: status.as_u16(),
@@ -85,13 +99,7 @@ impl ApiClient {
         let body = response.text()?;
         serde_json::from_str(&body).map_err(|e| {
             eprintln!("Failed to parse response from {}: {}", endpoint, e);
-            eprintln!("Response body: {}",
-                if body.len() > 500 {
-                    format!("{}...", &body[..500])
-                } else {
-                    body.clone()
-                }
-            );
+            eprintln!("Response body (first 500 chars): {}", truncate_str(&body, 500));
             Error::Parse(e)
         })
     }
@@ -124,6 +132,42 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_exact() {
+        assert_eq!(truncate_str("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_long() {
+        let result = truncate_str("hello world", 7);
+        assert!(result.starts_with("hello"));
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_str_utf8() {
+        // Test with multi-byte UTF-8 characters - should not panic
+        let text = "Hello 世界 World";
+        let result = truncate_str(text, 10);
+        // Should not panic and should be valid UTF-8
+        assert!(!result.is_empty());
+        assert!(result.len() <= 13); // 10 chars + "..."
+    }
+
+    #[test]
+    fn test_truncate_str_emoji() {
+        // Test with emoji (4-byte UTF-8)
+        let text = "Hello 🎉🎉🎉 World";
+        let result = truncate_str(text, 10);
+        // Should not panic
+        assert!(!result.is_empty());
+    }
 
     #[test]
     fn test_api_client_new() {

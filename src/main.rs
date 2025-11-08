@@ -62,9 +62,51 @@ fn run() -> Result<()> {
             println!("wrote {}", md_path.display());
         }
         #[cfg(feature = "index")]
-        muesli::cli::Commands::Search { query, limit } => {
+        muesli::cli::Commands::Search {
+            query,
+            limit,
+            #[cfg(feature = "embeddings")]
+            semantic,
+        } => {
             let paths = Paths::new(cli.data_dir)?;
 
+            // Check for semantic search
+            #[cfg(feature = "embeddings")]
+            {
+                if semantic {
+                    // Check if vector store exists
+                    let metadata_path = paths.index_dir.join("vectors.meta.json");
+                    if !metadata_path.exists() {
+                        eprintln!("No vector store found. Run 'muesli sync' first to generate embeddings.");
+                        std::process::exit(1);
+                    }
+
+                    // Perform semantic search
+                    let results = muesli::embeddings::semantic_search(&paths, &query, limit)?;
+
+                    // Handle empty results
+                    if results.is_empty() {
+                        println!("No results found for: {}", query);
+                        return Ok(());
+                    }
+
+                    // Display results
+                    for (rank, result) in results.iter().enumerate() {
+                        let title = result.title.as_deref().unwrap_or("Untitled");
+                        println!(
+                            "{}. {} ({}) [score: {:.3}]  {}",
+                            rank + 1,
+                            title,
+                            result.date,
+                            result.score,
+                            result.path
+                        );
+                    }
+                    return Ok(());
+                }
+            }
+
+            // Fall back to text search
             // Check if index exists
             if !paths.index_dir.exists() {
                 eprintln!("No index found. Run 'muesli sync' first to build the index.");

@@ -4,14 +4,49 @@
 use crate::{
     api::ApiClient,
     convert::to_markdown,
-    storage::{read_frontmatter, write_atomic, Paths},
+    storage::{write_atomic, Paths},
     util::slugify,
     Result,
 };
+use chrono::{DateTime, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[cfg(feature = "index")]
 use crate::index::text;
+
+#[cfg(feature = "embeddings")]
+use crate::embeddings::{downloader, engine::EmbeddingEngine, vector::VectorStore};
+
+#[derive(Serialize, Deserialize)]
+struct CacheEntry {
+    filename: String,
+    updated_at: DateTime<Utc>,
+}
+
+/// Load the sync cache (doc_id -> metadata)
+fn load_cache(cache_path: &std::path::Path) -> HashMap<String, CacheEntry> {
+    if !cache_path.exists() {
+        return HashMap::new();
+    }
+
+    std::fs::read_to_string(cache_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Save the sync cache atomically
+fn save_cache(
+    cache_path: &std::path::Path,
+    cache: &HashMap<String, CacheEntry>,
+    tmp_dir: &std::path::Path,
+) -> Result<()> {
+    let json = serde_json::to_string_pretty(cache)?;
+    write_atomic(cache_path, json.as_bytes(), tmp_dir)?;
+    Ok(())
+}
 
 pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
     paths.ensure_dirs()?;
@@ -25,8 +60,38 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
         (idx, wtr)
     };
 
+    // Initialize embedding engine and vector store (feature-gated)
+    #[cfg(feature = "embeddings")]
+    let (mut embedding_engine, mut vector_store) = {
+        println!("Initializing embedding engine...");
+
+        // Ensure model is downloaded
+        let model_paths = downloader::ensure_model(&paths.models_dir)?;
+
+        // Create embedding engine
+        let engine = EmbeddingEngine::new(&model_paths.model_path, &model_paths.tokenizer_path)?;
+        println!("✅ Embedding engine ready (dimension: {})", engine.dim());
+
+        // Load or create vector store
+        let vector_path = paths.index_dir.join("vectors");
+        let metadata_path = paths.index_dir.join("vectors.meta.json");
+        let store = if metadata_path.exists() {
+            println!("Loading existing vector store...");
+            VectorStore::load(&vector_path)?
+        } else {
+            println!("Creating new vector store");
+            VectorStore::new(engine.dim())
+        };
+
+        (engine, store)
+    };
+
     println!("Fetching document list...");
     let docs = client.list_documents()?;
+
+    // Load the sync cache (instant)
+    let cache_path = paths.data_dir.join(".sync_cache.json");
+    let mut cache = load_cache(&cache_path);
 
     let pb = ProgressBar::new(docs.len() as u64);
     pb.set_style(
@@ -39,74 +104,139 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
     let mut synced = 0;
     let mut skipped = 0;
 
+    #[cfg(feature = "embeddings")]
+    let mut embedded = 0;
+
     for doc_summary in &docs {
-        // Fetch metadata
-        let meta = client.get_metadata(&doc_summary.id)?;
-
-        // Compute filename
-        let date = meta.created_at.format("%Y-%m-%d").to_string();
-        let slug = slugify(meta.title.as_deref().unwrap_or("untitled"));
-        let base_filename = format!("{}_{}", date, slug);
-
-        // Check for existing file and update
-        let md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
-
-        let should_update = if md_path.exists() {
-            if let Some(fm) = read_frontmatter(&md_path)? {
-                if fm.doc_id == doc_summary.id {
-                    // Same doc - check if remote is newer
-                    let remote_ts = meta.updated_at.unwrap_or(meta.created_at);
-                    let local_ts = fm.remote_updated_at.unwrap_or(fm.created_at);
-                    remote_ts > local_ts
-                } else {
-                    // Different doc with same filename - need collision handling
-                    // For now, skip (will implement collision in next task)
-                    false
-                }
-            } else {
-                // No frontmatter - update
-                true
-            }
+        // Check cache for quick timestamp comparison
+        let should_update = if let Some(cache_entry) = cache.get(&doc_summary.id) {
+            let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+            remote_ts > cache_entry.updated_at
         } else {
-            // New file
+            // Not in cache - new file
             true
         };
 
-        if should_update {
-            // Fetch transcript
-            let raw = client.get_transcript(&doc_summary.id)?;
+        // Check if we need to generate embeddings (independent of sync status)
+        #[cfg(feature = "embeddings")]
+        let needs_embedding = !vector_store.has_document(&doc_summary.id);
 
-            // Convert to markdown
-            let md = to_markdown(&raw, &meta, &doc_summary.id)?;
+        #[cfg(not(feature = "embeddings"))]
+        let needs_embedding = false;
+
+        // If nothing to do, skip
+        if !should_update && !needs_embedding {
+            skipped += 1;
+            pb.inc(1);
+            continue;
+        }
+
+        // Fetch metadata and transcript from API
+        let meta = client.get_metadata(&doc_summary.id)?;
+        let raw = client.get_transcript(&doc_summary.id)?;
+
+        // Convert to markdown
+        let md = to_markdown(&raw, &meta, &doc_summary.id)?;
+
+        if should_update {
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
+
+            // Compute filename (may have changed if title changed)
+            let date = meta.created_at.format("%Y-%m-%d").to_string();
+            let slug = slugify(meta.title.as_deref().unwrap_or("untitled"));
+            let base_filename = format!("{}_{}", date, slug);
+            let new_md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
+
+            // If filename changed in cache, remove old file
+            if let Some(old_entry) = cache.get(&doc_summary.id) {
+                if old_entry.filename != base_filename {
+                    let old_path = paths.transcripts_dir.join(format!("{}.md", old_entry.filename));
+                    if old_path.exists() {
+                        std::fs::remove_file(&old_path)?;
+                    }
+                    let old_json = paths.raw_dir.join(format!("{}.json", old_entry.filename));
+                    if old_json.exists() {
+                        std::fs::remove_file(&old_json)?;
+                    }
+                }
+            }
 
             // Write files
             let json_path = paths.raw_dir.join(format!("{}.json", base_filename));
             let raw_json = serde_json::to_string_pretty(&raw)?;
 
             write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
-            write_atomic(&md_path, full_md.as_bytes(), &paths.tmp_dir)?;
+            write_atomic(&new_md_path, full_md.as_bytes(), &paths.tmp_dir)?;
+
+            // Update cache - CRITICAL: store the same timestamp we compare against
+            // (doc_summary.updated_at, NOT meta.updated_at - they can differ!)
+            let stored_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+            cache.insert(
+                doc_summary.id.clone(),
+                CacheEntry {
+                    filename: base_filename.clone(),
+                    updated_at: stored_ts,
+                },
+            );
+
+            // Save cache immediately for incremental sync (atomically)
+            // If interrupted, next run will skip already-synced docs
+            save_cache(&cache_path, &cache, &paths.tmp_dir)?;
 
             // Index the document (feature-gated, non-fatal)
             #[cfg(feature = "index")]
             {
-                let date_str = date.clone();
+                let date = meta.created_at.format("%Y-%m-%d").to_string();
                 if let Err(e) = text::index_markdown_batch(
                     &mut writer,
                     &index,
                     &doc_summary.id,
                     meta.title.as_deref(),
-                    &date_str,
+                    &date,
                     &md.body,
-                    &md_path,
+                    &new_md_path,
                 ) {
                     eprintln!("Warning: Failed to index document {}: {}", doc_summary.id, e);
                 }
             }
 
             synced += 1;
-        } else {
-            skipped += 1;
+        }
+
+        // Generate embeddings (feature-gated, non-fatal)
+        #[cfg(feature = "embeddings")]
+        {
+            if needs_embedding {
+                // Combine title and body for embedding
+                let text_for_embedding = if let Some(title) = meta.title.as_deref() {
+                    format!("{}\n\n{}", title, &md.body)
+                } else {
+                    md.body.clone()
+                };
+
+                // Truncate to avoid token limits (rough estimate: 1 token ≈ 4 chars)
+                let max_chars = 2000; // ~500 tokens, well under 512 limit
+                let text_truncated = if text_for_embedding.len() > max_chars {
+                    // Find valid UTF-8 boundary
+                    let mut boundary = max_chars.min(text_for_embedding.len());
+                    while boundary > 0 && !text_for_embedding.is_char_boundary(boundary) {
+                        boundary -= 1;
+                    }
+                    &text_for_embedding[..boundary]
+                } else {
+                    &text_for_embedding
+                };
+
+                match embedding_engine
+                    .embed_passage(text_truncated)
+                    .and_then(|vec| vector_store.add_document(doc_summary.id.clone(), vec))
+                {
+                    Ok(_) => embedded += 1,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to embed document {}: {}", doc_summary.id, e);
+                    }
+                }
+            }
         }
 
         pb.inc(1);
@@ -128,6 +258,19 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
             } else {
                 println!("Indexed {} documents", synced);
             }
+        }
+    }
+
+    // Save vector store (feature-gated)
+    #[cfg(feature = "embeddings")]
+    {
+        let vector_path = paths.index_dir.join("vectors");
+        if let Err(e) = vector_store.save(&vector_path) {
+            eprintln!("Warning: Failed to save vector store: {}", e);
+        } else if embedded > 0 {
+            println!("✅ Generated embeddings for {} new documents", embedded);
+        } else {
+            println!("✅ All documents already have embeddings");
         }
     }
 
