@@ -4,7 +4,7 @@
 use crate::{
     api::ApiClient,
     convert::to_markdown,
-    storage::{write_atomic, Paths},
+    storage::{read_frontmatter, write_atomic, Paths},
     util::slugify,
     Result,
 };
@@ -48,8 +48,14 @@ fn save_cache(
     Ok(())
 }
 
-pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
+pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> {
     paths.ensure_dirs()?;
+
+    // Handle reindex mode (feature-gated)
+    #[cfg(feature = "index")]
+    if reindex {
+        return reindex_all(paths);
+    }
 
     // Create or open the index and writer (feature-gated)
     #[cfg(feature = "index")]
@@ -272,6 +278,86 @@ pub fn sync_all(client: &ApiClient, paths: &Paths) -> Result<()> {
         } else {
             println!("✅ All documents already have embeddings");
         }
+    }
+
+    Ok(())
+}
+
+/// Reindex all existing markdown files without re-downloading
+#[cfg(feature = "index")]
+fn reindex_all(paths: &Paths) -> Result<()> {
+    use std::fs;
+
+    println!("Reindexing all documents from disk...");
+
+    // Create or open the index
+    let index = text::create_or_open_index(&paths.index_dir)?;
+    let mut writer = index.writer(50_000_000)
+        .map_err(|e| crate::Error::Indexing(format!("Failed to create index writer: {}", e)))?;
+
+    // Scan transcripts directory
+    let entries = fs::read_dir(&paths.transcripts_dir)
+        .map_err(|e| crate::Error::Filesystem(e))?;
+
+    let mut indexed = 0;
+    let mut failed = 0;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| crate::Error::Filesystem(e))?;
+        let path = entry.path();
+
+        // Only process .md files
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+
+        // Read frontmatter
+        let frontmatter = match read_frontmatter(&path)? {
+            Some(fm) => fm,
+            None => {
+                eprintln!("Warning: Skipping {} (no frontmatter)", path.display());
+                failed += 1;
+                continue;
+            }
+        };
+
+        // Read the markdown body
+        let content = fs::read_to_string(&path)
+            .map_err(|e| crate::Error::Filesystem(e))?;
+
+        // Extract body after frontmatter (skip YAML block)
+        let body = if content.starts_with("---\n") {
+            content.split("---\n").nth(2).unwrap_or(&content)
+        } else {
+            &content
+        };
+
+        // Index the document
+        let date = frontmatter.created_at.format("%Y-%m-%d").to_string();
+        match text::index_markdown_batch(
+            &mut writer,
+            &index,
+            &frontmatter.doc_id,
+            frontmatter.title.as_deref(),
+            &date,
+            body,
+            &path,
+        ) {
+            Ok(_) => indexed += 1,
+            Err(e) => {
+                eprintln!("Warning: Failed to index {}: {}", path.display(), e);
+                failed += 1;
+            }
+        }
+    }
+
+    // Commit the index
+    writer.commit()
+        .map_err(|e| crate::Error::Indexing(format!("Failed to commit index: {}", e)))?;
+
+    println!("✅ Reindexed {} documents", indexed);
+    if failed > 0 {
+        println!("⚠️  {} documents failed to index", failed);
     }
 
     Ok(())

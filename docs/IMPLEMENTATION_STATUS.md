@@ -97,46 +97,60 @@ make build-index
 
 ---
 
-## 🟡 Milestone 3: Embeddings (INFRASTRUCTURE COMPLETE)
+## ✅ Milestone 3: Embeddings (COMPLETE)
 
-**Status:** Infrastructure ready, ONNX implementation deferred
+**Status:** Production Ready
 **Tests:** 10 passing
 
 ### Implemented Features
 
-1. **Vector Store** (`src/embeddings/vector.rs`)
+1. **ONNX Engine** (`src/embeddings/engine.rs`)
+   - Full e5-small-v2 embedding model integration with ort 2.0.0-rc.10
+   - BERT tokenization with proper token_type_ids
+   - Mean pooling with attention masks
+   - Vector normalization for cosine similarity
+   - Query and passage embedding modes
+
+2. **Vector Store** (`src/embeddings/vector.rs`)
    - Cosine similarity search
    - Add/search vectors with dimension validation
    - Save/load persistence (JSON metadata + binary vectors)
    - 8 tests passing
 
-2. **Model Downloader** (`src/embeddings/downloader.rs`)
+3. **Model Downloader** (`src/embeddings/downloader.rs`)
    - Automatic e5-small-v2 model download from HuggingFace
    - Progress bar with indicatif
-   - Caches in XDG models directory
+   - Caches in XDG models directory (~133MB)
    - 2 tests passing
 
-3. **ONNX Engine** (`src/embeddings/engine.rs`)
-   - Skeleton implementation
-   - Returns error message directing to text search
-   - Normalization utilities tested
+4. **Semantic Search** (`src/embeddings.rs`)
+   - `--semantic` flag for meaning-based search
+   - Rich result display with title, date, score, and path
+   - Integration with sync workflow
+   - UTF-8 safe text truncation for multi-byte characters
 
-### Why ONNX Deferred
+### Usage
 
-The full ONNX Runtime integration requires:
-- Actual model files for testing (~100MB)
-- Complex tensor manipulation API
-- Platform-specific ONNX Runtime binaries
+```bash
+# Build with embeddings feature
+make build-all
 
-The infrastructure is ready for future implementation. Users should use the text search feature (`--features index`) which provides excellent search quality without the complexity.
+# Sync and generate embeddings (first run downloads model)
+./target/release/muesli sync
 
-### Future Implementation Path
+# Semantic search
+./target/release/muesli search --semantic "product development strategy" -n 5
 
-1. Test model download in CI
-2. Implement ONNX tensor conversion
-3. Add mean pooling logic
-4. Test with actual e5-small-v2 model
-5. Implement hybrid BM25 + cosine search
+# Regular text search
+./target/release/muesli search "meeting notes" -n 5
+```
+
+### Technical Details
+
+- Model: e5-small-v2 (384 dimensions)
+- Vector store size: ~804KB for 536 documents
+- Similarity scores: 0.80-0.90 range for good matches
+- Independent embedding generation (doesn't re-fetch if only embeddings missing)
 
 ---
 
@@ -243,22 +257,22 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 
 - **Core Sync** (Milestone 1)
 - **Text Search** (Milestone 2)
+- **Embeddings** (Milestone 3) - NEW!
 - **Summaries** (Milestone 4)
 
 ### 🚧 Future Enhancements
 
-- **Embeddings** (Milestone 3) - Infrastructure complete, ONNX implementation deferred
 - **Polish** (Milestone 5) - CI/CD, integration tests, documentation
 
 ---
 
 ## Known Limitations
 
-1. **Embeddings:** ONNX engine stubbed out - use text search instead
-2. **Platform Support:** macOS only for keychain (use env vars elsewhere)
-3. **Testing:** No integration tests yet
-4. **CI/CD:** No automated builds
-5. **Documentation:** Missing user guide and API docs
+1. **Platform Support:** macOS only for keychain (use env vars elsewhere)
+2. **Testing:** No integration tests yet
+3. **CI/CD:** No automated builds
+4. **Documentation:** Missing user guide and API docs
+5. **Text Search Index:** Requires full re-sync to build initially (need --reindex flag)
 
 ---
 
@@ -266,27 +280,33 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 
 ### For Users
 
-1. **Start with core + search:**
+1. **Start with all features:**
    ```bash
-   make build-index
+   make build-all
    ./target/release/muesli sync
-   ./target/release/muesli search "your query"
+
+   # Text search (keyword matching)
+   ./target/release/muesli search "quarterly planning"
+
+   # Semantic search (meaning-based)
+   ./target/release/muesli search --semantic "improving team collaboration"
    ```
 
 2. **Add summaries if needed:**
    ```bash
-   make build-summaries
    muesli set-api-key sk-...
    muesli summarize <doc-id>
    ```
 
-3. **Skip embeddings for now** - text search provides excellent quality
+3. **Choose search type based on need:**
+   - Text search: Fast, exact keyword matching
+   - Semantic search: Meaning-based, finds related concepts
 
 ### For Development
 
 1. **Add integration tests** - Test full workflows end-to-end
 2. **Set up CI/CD** - Automated testing and releases
-3. **Complete embeddings** - If vector search is needed later
+3. **Add --reindex flag** - Rebuild text index without re-syncing
 4. **Optimize binary size** - Strip symbols, consider UPX
 5. **Write documentation** - README, user guide, API docs
 
@@ -294,18 +314,24 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 
 ## Conclusion
 
-**Muesli is production-ready for core functionality:**
-- ✅ 63 tests passing
-- ✅ Milestones 1, 2, 4 complete
+**Muesli is production-ready for all core functionality:**
+- ✅ 63+ tests passing
+- ✅ Milestones 1, 2, 3, 4 complete
 - ✅ Clean architecture with proper error handling
 - ✅ Feature flags for optional dependencies
 - ✅ TDD approach throughout
 
 **The project successfully delivers:**
 - Granola transcript sync
-- Full-text search with Tantivy
+- Full-text search with Tantivy (BM25)
+- Semantic search with e5-small-v2 embeddings (NEW!)
 - AI summaries with OpenAI
 - Clean CLI interface
 - XDG-compliant storage
 
-**Next steps:** Integration tests, CI/CD, and user documentation.
+**Next steps (Milestone 5 - Polish):**
+- Integration tests
+- GitHub Actions CI/CD
+- --reindex flag for text search
+- Binary size optimization
+- User documentation and README

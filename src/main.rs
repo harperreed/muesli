@@ -17,10 +17,20 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command() {
-        muesli::cli::Commands::Sync => {
+        muesli::cli::Commands::Sync {
+            #[cfg(feature = "index")]
+            reindex,
+        } => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
-            sync_all(&client, &paths)?;
+            #[cfg(feature = "index")]
+            {
+                sync_all(&client, &paths, reindex)?;
+            }
+            #[cfg(not(feature = "index"))]
+            {
+                sync_all(&client, &paths, false)?;
+            }
         }
         muesli::cli::Commands::List => {
             let client = create_client(&cli)?;

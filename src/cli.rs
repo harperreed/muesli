@@ -52,7 +52,12 @@ fn parse_throttle_range(s: &str) -> Result<(u64, u64), String> {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Sync all documents (default)
-    Sync,
+    Sync {
+        /// Force reindex of all documents without re-downloading
+        #[arg(long)]
+        #[cfg(feature = "index")]
+        reindex: bool,
+    },
 
     /// List all documents
     List,
@@ -82,7 +87,10 @@ pub enum Commands {
 
 impl Cli {
     pub fn command(&self) -> Commands {
-        self.command.clone().unwrap_or(Commands::Sync)
+        self.command.clone().unwrap_or(Commands::Sync {
+            #[cfg(feature = "index")]
+            reindex: false,
+        })
     }
 }
 
