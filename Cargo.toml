@@ -49,3 +49,11 @@ default = []
 summaries = ["dep:keyring", "dep:async-openai", "dep:tokio"]
 index = ["dep:tantivy"]
 embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", "dep:ndarray"]
+
+# Binary size optimization
+[profile.release]
+opt-level = "z"      # Optimize for size
+lto = true           # Enable Link Time Optimization
+codegen-units = 1    # Better optimization (slower build)
+strip = true         # Strip debug symbols
+panic = "abort"      # Don't unwind on panic (smaller binary)
