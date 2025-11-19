@@ -101,11 +101,7 @@ impl VectorStore {
         fs::write(&metadata_path, metadata_json)?;
 
         // Save vectors
-        let vectors_bytes: Vec<u8> = self
-            .vectors
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let vectors_bytes: Vec<u8> = self.vectors.iter().flat_map(|f| f.to_le_bytes()).collect();
         fs::write(&vectors_path, vectors_bytes)?;
 
         Ok(())

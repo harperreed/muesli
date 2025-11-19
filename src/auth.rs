@@ -23,7 +23,8 @@ pub fn resolve_token(cli_token: Option<String>) -> Result<String> {
     }
 
     Err(Error::Auth(
-        "No bearer token found. Provide via --token or BEARER_TOKEN env var, or log in to Granola".into(),
+        "No bearer token found. Provide via --token or BEARER_TOKEN env var, or log in to Granola"
+            .into(),
     ))
 }
 

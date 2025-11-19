@@ -99,7 +99,10 @@ impl ApiClient {
         let body = response.text()?;
         serde_json::from_str(&body).map_err(|e| {
             eprintln!("Failed to parse response from {}: {}", endpoint, e);
-            eprintln!("Response body (first 500 chars): {}", truncate_str(&body, 500));
+            eprintln!(
+                "Response body (first 500 chars): {}",
+                truncate_str(&body, 500)
+            );
             Error::Parse(e)
         })
     }

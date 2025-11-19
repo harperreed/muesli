@@ -4,8 +4,10 @@
 use crate::{Error, Result};
 use async_openai::{
     config::OpenAIConfig,
-    types::{ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-           ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+    types::{
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
+    },
     Client,
 };
 
@@ -73,9 +75,11 @@ async fn summarize_chunk(client: &Client<OpenAIConfig>, text: &str) -> Result<St
         .build()
         .map_err(|e| Error::Summarization(format!("Failed to build request: {}", e)))?;
 
-    let response = client.chat().create(request).await.map_err(|e| {
-        Error::Summarization(format!("OpenAI API error: {}", e))
-    })?;
+    let response = client
+        .chat()
+        .create(request)
+        .await
+        .map_err(|e| Error::Summarization(format!("OpenAI API error: {}", e)))?;
 
     response
         .choices
@@ -115,9 +119,8 @@ pub fn get_api_key_from_keychain() -> Result<String> {
     {
         use keyring::Entry;
 
-        let entry = Entry::new("muesli", "openai_api_key").map_err(|e| {
-            Error::Auth(format!("Failed to access keychain: {}", e))
-        })?;
+        let entry = Entry::new("muesli", "openai_api_key")
+            .map_err(|e| Error::Auth(format!("Failed to access keychain: {}", e)))?;
 
         entry.get_password().map_err(|e| {
             Error::Auth(format!(
@@ -141,13 +144,12 @@ pub fn set_api_key_in_keychain(api_key: &str) -> Result<()> {
     {
         use keyring::Entry;
 
-        let entry = Entry::new("muesli", "openai_api_key").map_err(|e| {
-            Error::Auth(format!("Failed to access keychain: {}", e))
-        })?;
+        let entry = Entry::new("muesli", "openai_api_key")
+            .map_err(|e| Error::Auth(format!("Failed to access keychain: {}", e)))?;
 
-        entry.set_password(api_key).map_err(|e| {
-            Error::Auth(format!("Failed to store API key in keychain: {}", e))
-        })?;
+        entry
+            .set_password(api_key)
+            .map_err(|e| Error::Auth(format!("Failed to store API key in keychain: {}", e)))?;
 
         println!("✅ OpenAI API key stored in keychain");
         Ok(())

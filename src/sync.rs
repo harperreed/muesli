@@ -61,7 +61,8 @@ pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> 
     #[cfg(feature = "index")]
     let (index, mut writer) = {
         let idx = text::create_or_open_index(&paths.index_dir)?;
-        let wtr = idx.writer(50_000_000)
+        let wtr = idx
+            .writer(50_000_000)
             .map_err(|e| crate::Error::Indexing(format!("Failed to create index writer: {}", e)))?;
         (idx, wtr)
     };
@@ -156,7 +157,9 @@ pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> 
             // If filename changed in cache, remove old file
             if let Some(old_entry) = cache.get(&doc_summary.id) {
                 if old_entry.filename != base_filename {
-                    let old_path = paths.transcripts_dir.join(format!("{}.md", old_entry.filename));
+                    let old_path = paths
+                        .transcripts_dir
+                        .join(format!("{}.md", old_entry.filename));
                     if old_path.exists() {
                         std::fs::remove_file(&old_path)?;
                     }
@@ -202,7 +205,10 @@ pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> 
                     &md.body,
                     &new_md_path,
                 ) {
-                    eprintln!("Warning: Failed to index document {}: {}", doc_summary.id, e);
+                    eprintln!(
+                        "Warning: Failed to index document {}: {}",
+                        doc_summary.id, e
+                    );
                 }
             }
 
@@ -239,7 +245,10 @@ pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> 
                 {
                     Ok(_) => embedded += 1,
                     Err(e) => {
-                        eprintln!("Warning: Failed to embed document {}: {}", doc_summary.id, e);
+                        eprintln!(
+                            "Warning: Failed to embed document {}: {}",
+                            doc_summary.id, e
+                        );
                     }
                 }
             }
@@ -292,12 +301,12 @@ fn reindex_all(paths: &Paths) -> Result<()> {
 
     // Create or open the index
     let index = text::create_or_open_index(&paths.index_dir)?;
-    let mut writer = index.writer(50_000_000)
+    let mut writer = index
+        .writer(50_000_000)
         .map_err(|e| crate::Error::Indexing(format!("Failed to create index writer: {}", e)))?;
 
     // Scan transcripts directory
-    let entries = fs::read_dir(&paths.transcripts_dir)
-        .map_err(|e| crate::Error::Filesystem(e))?;
+    let entries = fs::read_dir(&paths.transcripts_dir).map_err(|e| crate::Error::Filesystem(e))?;
 
     let mut indexed = 0;
     let mut failed = 0;
@@ -322,8 +331,7 @@ fn reindex_all(paths: &Paths) -> Result<()> {
         };
 
         // Read the markdown body
-        let content = fs::read_to_string(&path)
-            .map_err(|e| crate::Error::Filesystem(e))?;
+        let content = fs::read_to_string(&path).map_err(|e| crate::Error::Filesystem(e))?;
 
         // Extract body after frontmatter (skip YAML block)
         let body = if content.starts_with("---\n") {
@@ -352,7 +360,8 @@ fn reindex_all(paths: &Paths) -> Result<()> {
     }
 
     // Commit the index
-    writer.commit()
+    writer
+        .commit()
         .map_err(|e| crate::Error::Indexing(format!("Failed to commit index: {}", e)))?;
 
     println!("✅ Reindexed {} documents", indexed);

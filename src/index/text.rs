@@ -3,7 +3,7 @@
 
 use crate::error::{Error, Result};
 use std::path::Path;
-use tantivy::schema::{Schema, STORED, TEXT, STRING, Value};
+use tantivy::schema::{Schema, Value, STORED, STRING, TEXT};
 use tantivy::{doc, Index, Term};
 
 /// Represents a search result from the index
@@ -61,13 +61,15 @@ pub fn index_markdown(
     body: &str,
     path: &Path,
 ) -> Result<()> {
-    let mut writer = index.writer(50_000_000)
+    let mut writer = index
+        .writer(50_000_000)
         .map_err(|e| Error::Indexing(format!("Failed to create index writer: {}", e)))?;
 
     index_markdown_batch(&mut writer, index, doc_id, title, date, body, path)?;
 
     // Commit the changes
-    writer.commit()
+    writer
+        .commit()
         .map_err(|e| Error::Indexing(format!("Failed to commit: {}", e)))?;
 
     Ok(())
@@ -86,15 +88,20 @@ pub fn index_markdown_batch(
 ) -> Result<()> {
     let schema = index.schema();
 
-    let doc_id_field = schema.get_field("doc_id")
+    let doc_id_field = schema
+        .get_field("doc_id")
         .map_err(|e| Error::Indexing(format!("Missing doc_id field: {}", e)))?;
-    let title_field = schema.get_field("title")
+    let title_field = schema
+        .get_field("title")
         .map_err(|e| Error::Indexing(format!("Missing title field: {}", e)))?;
-    let date_field = schema.get_field("date")
+    let date_field = schema
+        .get_field("date")
         .map_err(|e| Error::Indexing(format!("Missing date field: {}", e)))?;
-    let body_field = schema.get_field("body")
+    let body_field = schema
+        .get_field("body")
         .map_err(|e| Error::Indexing(format!("Missing body field: {}", e)))?;
-    let path_field = schema.get_field("path")
+    let path_field = schema
+        .get_field("path")
         .map_err(|e| Error::Indexing(format!("Missing path field: {}", e)))?;
 
     // Delete any existing document with the same doc_id (upsert)
@@ -117,7 +124,8 @@ pub fn index_markdown_batch(
     }
 
     // Add the document
-    writer.add_document(document)
+    writer
+        .add_document(document)
         .map_err(|e| Error::Indexing(format!("Failed to add document: {}", e)))?;
 
     Ok(())
@@ -134,55 +142,68 @@ pub fn search(index: &Index, query: &str, limit: usize) -> Result<Vec<SearchResu
     let schema = index.schema();
 
     // Get the fields we want to search
-    let title_field = schema.get_field("title")
+    let title_field = schema
+        .get_field("title")
         .map_err(|e| Error::Indexing(format!("Missing title field: {}", e)))?;
-    let body_field = schema.get_field("body")
+    let body_field = schema
+        .get_field("body")
         .map_err(|e| Error::Indexing(format!("Missing body field: {}", e)))?;
 
     // Get the stored fields for results
-    let doc_id_field = schema.get_field("doc_id")
+    let doc_id_field = schema
+        .get_field("doc_id")
         .map_err(|e| Error::Indexing(format!("Missing doc_id field: {}", e)))?;
-    let date_field = schema.get_field("date")
+    let date_field = schema
+        .get_field("date")
         .map_err(|e| Error::Indexing(format!("Missing date field: {}", e)))?;
-    let path_field = schema.get_field("path")
+    let path_field = schema
+        .get_field("path")
         .map_err(|e| Error::Indexing(format!("Missing path field: {}", e)))?;
 
     // Create reader and searcher
-    let reader = index.reader()
+    let reader = index
+        .reader()
         .map_err(|e| Error::Indexing(format!("Failed to create reader: {}", e)))?;
     let searcher = reader.searcher();
 
     // Parse the query - search both title and body fields
     let query_parser = QueryParser::for_index(index, vec![title_field, body_field]);
-    let parsed_query = query_parser.parse_query(query)
+    let parsed_query = query_parser
+        .parse_query(query)
         .map_err(|e| Error::Indexing(format!("Failed to parse query '{}': {}", query, e)))?;
 
     // Execute the search with BM25 scoring (default in Tantivy)
-    let top_docs = searcher.search(&parsed_query, &TopDocs::with_limit(limit))
+    let top_docs = searcher
+        .search(&parsed_query, &TopDocs::with_limit(limit))
         .map_err(|e| Error::Indexing(format!("Search failed: {}", e)))?;
 
     // Convert results to SearchResult structs
     let mut results = Vec::new();
     for (score, doc_address) in top_docs {
-        let retrieved_doc = searcher.doc::<tantivy::TantivyDocument>(doc_address)
+        let retrieved_doc = searcher
+            .doc::<tantivy::TantivyDocument>(doc_address)
             .map_err(|e| Error::Indexing(format!("Failed to retrieve document: {}", e)))?;
 
         // Extract fields from the document
-        let doc_id = retrieved_doc.get_first(doc_id_field)
+        let doc_id = retrieved_doc
+            .get_first(doc_id_field)
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Indexing("Document missing doc_id".to_string()))?
             .to_string();
 
-        let title = retrieved_doc.get_first(title_field)
+        let title = retrieved_doc
+            .get_first(title_field)
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let date = retrieved_doc.get_first(date_field)
+        let date = retrieved_doc
+            .get_first(date_field)
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Indexing("Document missing date".to_string()))?
             .to_string();
 
-        let path = retrieved_doc.get_first(path_field)
+        let path = retrieved_doc
+            .get_first(path_field)
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Indexing("Document missing path".to_string()))?
             .to_string();
@@ -240,7 +261,10 @@ mod tests {
         let schema = index2.schema();
 
         // Verify fields still exist
-        assert!(schema.get_field("doc_id").is_ok(), "doc_id field missing after reopen");
+        assert!(
+            schema.get_field("doc_id").is_ok(),
+            "doc_id field missing after reopen"
+        );
     }
 
     #[test]
@@ -280,7 +304,11 @@ mod tests {
             doc_path,
         );
 
-        assert!(result.is_ok(), "Failed to index document without title: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to index document without title: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -323,12 +351,21 @@ mod tests {
 
         let doc_id_field = schema.get_field("doc_id").unwrap();
         let query_parser = QueryParser::for_index(&index, vec![doc_id_field]);
-        let query = query_parser.parse_query("doc789").expect("Failed to parse query");
+        let query = query_parser
+            .parse_query("doc789")
+            .expect("Failed to parse query");
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).expect("Search failed");
+        let top_docs = searcher
+            .search(&query, &TopDocs::with_limit(10))
+            .expect("Search failed");
 
         // Should only have 1 document (the updated one)
-        assert_eq!(top_docs.len(), 1, "Expected exactly 1 document after upsert, found {}", top_docs.len());
+        assert_eq!(
+            top_docs.len(),
+            1,
+            "Expected exactly 1 document after upsert, found {}",
+            top_docs.len()
+        );
     }
 
     #[test]
@@ -371,13 +408,24 @@ mod tests {
         let title_field = schema.get_field("title").unwrap();
 
         let query_parser = QueryParser::for_index(&index, vec![title_field, body_field]);
-        let query = query_parser.parse_query("rust").expect("Failed to parse query");
+        let query = query_parser
+            .parse_query("rust")
+            .expect("Failed to parse query");
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(10)).expect("Search failed");
+        let top_docs = searcher
+            .search(&query, &TopDocs::with_limit(10))
+            .expect("Search failed");
 
         // Should find the Rust document
-        assert!(!top_docs.is_empty(), "Expected to find at least one document for 'rust'");
-        assert_eq!(top_docs.len(), 1, "Expected exactly 1 document matching 'rust'");
+        assert!(
+            !top_docs.is_empty(),
+            "Expected to find at least one document for 'rust'"
+        );
+        assert_eq!(
+            top_docs.len(),
+            1,
+            "Expected exactly 1 document matching 'rust'"
+        );
     }
 
     #[test]
@@ -471,7 +519,10 @@ mod tests {
 
         assert!(!results.is_empty(), "Expected to find results");
         // doc1 should rank higher because it contains both terms
-        assert_eq!(results[0].doc_id, "doc1", "Expected doc1 with both terms to rank highest");
+        assert_eq!(
+            results[0].doc_id, "doc1",
+            "Expected doc1 with both terms to rank highest"
+        );
         assert!(results.len() >= 2, "Expected at least 2 results");
     }
 
@@ -496,7 +547,10 @@ mod tests {
         // Search for just "guide" (matches "Programming Guide")
         let results = super::search(&index, "guide", 10).expect("Search failed");
 
-        assert!(!results.is_empty(), "Expected to find results for partial match");
+        assert!(
+            !results.is_empty(),
+            "Expected to find results for partial match"
+        );
         assert_eq!(results[0].doc_id, "doc1");
     }
 
@@ -535,7 +589,10 @@ mod tests {
         assert!(results.len() >= 2, "Expected at least 2 results");
         // doc1 should rank higher due to more occurrences and title match
         assert_eq!(results[0].doc_id, "doc1", "Expected doc1 to rank higher");
-        assert!(results[0].score > results[1].score, "Expected doc1 to have higher score");
+        assert!(
+            results[0].score > results[1].score,
+            "Expected doc1 to have higher score"
+        );
     }
 
     #[test]
@@ -585,7 +642,10 @@ mod tests {
         // Search for something that doesn't exist
         let results = super::search(&index, "xyznonexistent", 10).expect("Search failed");
 
-        assert!(results.is_empty(), "Expected no results for non-matching query");
+        assert!(
+            results.is_empty(),
+            "Expected no results for non-matching query"
+        );
     }
 
     #[test]

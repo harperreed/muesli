@@ -23,9 +23,10 @@ impl EmbeddingEngine {
             .map_err(|e| Error::Embedding(format!("Failed to initialize ort: {}", e)))?;
 
         // Load tokenizer
-        let tokenizer = Arc::new(Tokenizer::from_file(tokenizer_path).map_err(|e| {
-            Error::Embedding(format!("Failed to load tokenizer: {}", e))
-        })?);
+        let tokenizer = Arc::new(
+            Tokenizer::from_file(tokenizer_path)
+                .map_err(|e| Error::Embedding(format!("Failed to load tokenizer: {}", e)))?,
+        );
 
         // Create session - read model into memory first
         let model_bytes = std::fs::read(model_path)
@@ -72,20 +73,23 @@ impl EmbeddingEngine {
 
         // Convert to i64 arrays (ONNX expects i64)
         let input_ids_i64: Vec<i64> = input_ids.iter().map(|&id| id as i64).collect();
-        let attention_mask_i64: Vec<i64> =
-            attention_mask.iter().map(|&mask| mask as i64).collect();
+        let attention_mask_i64: Vec<i64> = attention_mask.iter().map(|&mask| mask as i64).collect();
 
         // Create Value tensors - ort 2.0 expects (shape, data) tuple
         let input_ids_value = Value::from_array((vec![1, len], input_ids_i64))
             .map_err(|e| Error::Embedding(format!("Failed to create input_ids tensor: {}", e)))?;
 
         let attention_mask_value = Value::from_array((vec![1, len], attention_mask_i64.clone()))
-            .map_err(|e| Error::Embedding(format!("Failed to create attention_mask tensor: {}", e)))?;
+            .map_err(|e| {
+                Error::Embedding(format!("Failed to create attention_mask tensor: {}", e))
+            })?;
 
         // Create token_type_ids (all zeros for single sequence)
         let token_type_ids: Vec<i64> = vec![0; len];
-        let token_type_ids_value = Value::from_array((vec![1, len], token_type_ids))
-            .map_err(|e| Error::Embedding(format!("Failed to create token_type_ids tensor: {}", e)))?;
+        let token_type_ids_value =
+            Value::from_array((vec![1, len], token_type_ids)).map_err(|e| {
+                Error::Embedding(format!("Failed to create token_type_ids tensor: {}", e))
+            })?;
 
         // Run inference using ort 2.0 API
         let outputs = self

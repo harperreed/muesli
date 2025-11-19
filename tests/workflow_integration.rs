@@ -125,7 +125,10 @@ fn test_reindex_workflow() -> Result<()> {
 
     // Test search for different term
     let results = text::search(&index, "authentication", 10)?;
-    assert!(!results.is_empty(), "Should find results for 'authentication'");
+    assert!(
+        !results.is_empty(),
+        "Should find results for 'authentication'"
+    );
     assert_eq!(
         results[0].title.as_deref(),
         Some("Engineering Standup"),
@@ -134,7 +137,10 @@ fn test_reindex_workflow() -> Result<()> {
 
     // Test search with no results
     let results = text::search(&index, "nonexistent", 10)?;
-    assert!(results.is_empty(), "Should return empty for non-existent term");
+    assert!(
+        results.is_empty(),
+        "Should return empty for non-existent term"
+    );
 
     Ok(())
 }
@@ -195,9 +201,7 @@ fn test_semantic_search_workflow() -> Result<()> {
     let doc2_vec: Vec<f32> = (0..384).map(|i| (i as f32 * 0.01).cos()).collect();
     let doc2_vec = normalize_vector(doc2_vec);
 
-    let doc3_vec: Vec<f32> = (0..384)
-        .map(|i| ((i as f32 * 0.01) + 1.0).sin())
-        .collect();
+    let doc3_vec: Vec<f32> = (0..384).map(|i| ((i as f32 * 0.01) + 1.0).sin()).collect();
     let doc3_vec = normalize_vector(doc3_vec);
 
     // Add documents to store
@@ -222,8 +226,14 @@ fn test_semantic_search_workflow() -> Result<()> {
     );
 
     // Verify ordering by similarity
-    assert!(results[0].1 > results[1].1, "Results should be ordered by similarity");
-    assert!(results[1].1 > results[2].1, "Results should be ordered by similarity");
+    assert!(
+        results[0].1 > results[1].1,
+        "Results should be ordered by similarity"
+    );
+    assert!(
+        results[1].1 > results[2].1,
+        "Results should be ordered by similarity"
+    );
 
     Ok(())
 }

@@ -34,17 +34,14 @@ pub struct SearchResult {
 
 /// Perform semantic search using embeddings
 #[cfg(feature = "embeddings")]
-pub fn semantic_search(
-    paths: &Paths,
-    query: &str,
-    top_k: usize,
-) -> Result<Vec<SearchResult>> {
+pub fn semantic_search(paths: &Paths, query: &str, top_k: usize) -> Result<Vec<SearchResult>> {
     use crate::storage::read_frontmatter;
     use std::fs;
 
     // Load the embedding engine
     let model_paths = downloader::ensure_model(&paths.models_dir)?;
-    let mut engine = engine::EmbeddingEngine::new(&model_paths.model_path, &model_paths.tokenizer_path)?;
+    let mut engine =
+        engine::EmbeddingEngine::new(&model_paths.model_path, &model_paths.tokenizer_path)?;
 
     // Generate query embedding
     let query_vec = engine.embed_query(query)?;
