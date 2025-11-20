@@ -36,6 +36,7 @@ tokenizers = { version = "0.19", optional = true }
 rayon = { version = "1.10", optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 ndarray = { version = "0.15", optional = true }
+open = "5.3.3"
 
 [dev-dependencies]
 wiremock = "0.6"

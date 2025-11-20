@@ -83,6 +83,9 @@ pub enum Commands {
         #[cfg(feature = "embeddings")]
         semantic: bool,
     },
+
+    /// Open the data directory in the system file browser
+    Open,
 }
 
 impl Cli {

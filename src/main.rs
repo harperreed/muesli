@@ -141,6 +141,17 @@ fn run() -> Result<()> {
                 println!("{}. {} ({})  {}", rank + 1, title, result.date, result.path);
             }
         }
+        muesli::cli::Commands::Open => {
+            let paths = Paths::new(cli.data_dir)?;
+            paths.ensure_dirs()?;
+
+            // Open the data directory in the system file browser
+            if let Err(e) = open::that(&paths.data_dir) {
+                eprintln!("Failed to open data directory: {}", e);
+                std::process::exit(1);
+            }
+            println!("Opened data directory: {}", paths.data_dir.display());
+        }
     }
 
     Ok(())
