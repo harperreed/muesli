@@ -37,6 +37,7 @@ rayon = { version = "1.10", optional = true }
 hnsw_rs = { version = "0.3", optional = true }
 ndarray = { version = "0.15", optional = true }
 open = "5.3.3"
+filetime = "0.2.26"
 
 [dev-dependencies]
 wiremock = "0.6"

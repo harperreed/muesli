@@ -2220,6 +2220,7 @@ dependencies = [
  "chrono",
  "clap",
  "directories",
+ "filetime",
  "hnsw_rs",
  "indicatif",
  "insta",

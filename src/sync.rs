@@ -4,7 +4,7 @@
 use crate::{
     api::ApiClient,
     convert::to_markdown,
-    storage::{write_atomic, Paths},
+    storage::{set_file_time, write_atomic, Paths},
     util::slugify,
     Result,
 };
@@ -183,6 +183,10 @@ pub fn sync_all(
 
             write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
             write_atomic(&new_md_path, full_md.as_bytes(), &paths.tmp_dir)?;
+
+            // Set file modification time to meeting creation date
+            set_file_time(&json_path, &meta.created_at)?;
+            set_file_time(&new_md_path, &meta.created_at)?;
 
             // Update cache - CRITICAL: store the same timestamp we compare against
             // (doc_summary.updated_at, NOT meta.updated_at - they can differ!)

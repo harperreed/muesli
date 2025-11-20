@@ -2,7 +2,9 @@
 // ABOUTME: Handles paths, permissions, and frontmatter parsing
 
 use crate::{Error, Frontmatter, Result};
+use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
+use filetime::FileTime;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -89,6 +91,18 @@ pub fn write_atomic(path: &Path, content: &[u8], tmp_dir: &Path) -> Result<()> {
     fs::rename(&tmp_path, path)?;
 
     Ok(())
+}
+
+/// Set file modification time to match a given datetime
+pub fn set_file_time(path: &Path, datetime: &DateTime<Utc>) -> Result<()> {
+    let timestamp = datetime.timestamp();
+    let filetime = FileTime::from_unix_time(timestamp, 0);
+    filetime::set_file_mtime(path, filetime).map_err(|e| {
+        Error::Filesystem(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to set file time: {}", e),
+        ))
+    })
 }
 
 pub fn read_frontmatter(md_path: &Path) -> Result<Option<Frontmatter>> {

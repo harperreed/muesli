@@ -68,6 +68,10 @@ fn run() -> Result<()> {
             muesli::storage::write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
             muesli::storage::write_atomic(&md_path, full_md.as_bytes(), &paths.tmp_dir)?;
 
+            // Set file modification time to meeting creation date
+            muesli::storage::set_file_time(&json_path, &meta.created_at)?;
+            muesli::storage::set_file_time(&md_path, &meta.created_at)?;
+
             println!("wrote {}", json_path.display());
             println!("wrote {}", md_path.display());
         }
