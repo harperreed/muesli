@@ -165,9 +165,94 @@ fn run() -> Result<()> {
             let paths = Paths::new(cli.data_dir)?;
             fix_dates(&paths)?;
         }
+        #[cfg(feature = "summaries")]
+        muesli::cli::Commands::SetApiKey { api_key } => {
+            muesli::summary::set_api_key_in_keychain(&api_key)?;
+        }
+        #[cfg(feature = "summaries")]
+        muesli::cli::Commands::Summarize { doc_id, save } => {
+            let paths = Paths::new(cli.data_dir)?;
+
+            // Find the markdown file for this doc_id
+            let md_path = find_transcript_by_id(&paths, &doc_id)?;
+
+            // Read the transcript
+            let content = std::fs::read_to_string(&md_path)?;
+
+            // Extract body (skip frontmatter)
+            let body = if content.starts_with("---\n") {
+                content
+                    .split("---\n")
+                    .nth(2)
+                    .unwrap_or(&content)
+                    .to_string()
+            } else {
+                content
+            };
+
+            // Get API key
+            let api_key = std::env::var("OPENAI_API_KEY")
+                .or_else(|_| muesli::summary::get_api_key_from_keychain())?;
+
+            // Run async summarization
+            println!("Summarizing transcript...");
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let summary = rt.block_on(muesli::summary::summarize_transcript(&body, &api_key))?;
+
+            if save {
+                // Save to summaries directory
+                let filename = md_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| {
+                        muesli::Error::Filesystem(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Invalid filename",
+                        ))
+                    })?;
+                let summary_path = paths.summaries_dir.join(format!("{}_summary.md", filename));
+
+                muesli::storage::write_atomic(&summary_path, summary.as_bytes(), &paths.tmp_dir)?;
+                println!("✅ Summary saved to: {}", summary_path.display());
+            } else {
+                // Print to stdout
+                println!("\n{}\n", summary);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Find a transcript file by document ID
+#[cfg(feature = "summaries")]
+fn find_transcript_by_id(paths: &Paths, doc_id: &str) -> muesli::Result<std::path::PathBuf> {
+    use std::fs;
+
+    let entries = fs::read_dir(&paths.transcripts_dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+
+        // Read frontmatter to check doc_id
+        if let Some(fm) = muesli::storage::read_frontmatter(&path)? {
+            if fm.doc_id == doc_id {
+                return Ok(path);
+            }
+        }
+    }
+
+    Err(muesli::Error::Filesystem(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!("No transcript found for document ID: {}", doc_id),
+    )))
 }
 
 /// Creates an API client with auth and throttle configuration from CLI flags.

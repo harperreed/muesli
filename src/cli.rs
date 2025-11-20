@@ -89,6 +89,24 @@ pub enum Commands {
 
     /// Fix file modification dates to match meeting creation dates
     FixDates,
+
+    /// Store OpenAI API key in system keychain (macOS only)
+    #[cfg(feature = "summaries")]
+    SetApiKey {
+        /// OpenAI API key
+        api_key: String,
+    },
+
+    /// Summarize a transcript using OpenAI
+    #[cfg(feature = "summaries")]
+    Summarize {
+        /// Document ID to summarize
+        doc_id: String,
+
+        /// Save summary to file (default: print to stdout)
+        #[arg(long)]
+        save: bool,
+    },
 }
 
 impl Cli {
