@@ -3,7 +3,12 @@
 
 use clap::Parser;
 use muesli::{
-    api::ApiClient, auth::resolve_token, cli::Cli, storage::Paths, sync::sync_all, Result,
+    api::ApiClient,
+    auth::resolve_token,
+    cli::Cli,
+    storage::Paths,
+    sync::{fix_dates, sync_all},
+    Result,
 };
 
 fn main() {
@@ -155,6 +160,10 @@ fn run() -> Result<()> {
                 std::process::exit(1);
             }
             println!("Opened data directory: {}", paths.data_dir.display());
+        }
+        muesli::cli::Commands::FixDates => {
+            let paths = Paths::new(cli.data_dir)?;
+            fix_dates(&paths)?;
         }
     }
 

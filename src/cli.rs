@@ -86,6 +86,9 @@ pub enum Commands {
 
     /// Open the data directory in the system file browser
     Open,
+
+    /// Fix file modification dates to match meeting creation dates
+    FixDates,
 }
 
 impl Cli {

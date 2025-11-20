@@ -383,6 +383,100 @@ fn reindex_all(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
+/// Fix file modification dates for all existing files to match meeting creation dates
+pub fn fix_dates(paths: &Paths) -> Result<()> {
+    use std::fs;
+
+    println!("Fixing file modification dates...");
+
+    let entries = fs::read_dir(&paths.transcripts_dir).map_err(crate::Error::Filesystem)?;
+
+    let mut fixed = 0;
+    let mut failed = 0;
+
+    for entry in entries {
+        let entry = entry.map_err(crate::Error::Filesystem)?;
+        let path = entry.path();
+
+        // Only process .md files
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+
+        // Read frontmatter to get the created_at date
+        #[cfg(feature = "index")]
+        let frontmatter = match read_frontmatter(&path)? {
+            Some(fm) => fm,
+            None => {
+                eprintln!("Warning: Skipping {} (no frontmatter)", path.display());
+                failed += 1;
+                continue;
+            }
+        };
+
+        #[cfg(not(feature = "index"))]
+        let frontmatter = {
+            // Without index feature, we need to parse frontmatter manually
+            let content = fs::read_to_string(&path).map_err(crate::Error::Filesystem)?;
+            if !content.starts_with("---\n") {
+                eprintln!("Warning: Skipping {} (no frontmatter)", path.display());
+                failed += 1;
+                continue;
+            }
+            let rest = &content[4..];
+            if let Some(end_pos) = rest.find("\n---\n") {
+                let yaml = &rest[..end_pos];
+                match serde_yaml::from_str::<crate::Frontmatter>(yaml) {
+                    Ok(fm) => fm,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Skipping {} (failed to parse frontmatter: {})",
+                            path.display(),
+                            e
+                        );
+                        failed += 1;
+                        continue;
+                    }
+                }
+            } else {
+                eprintln!("Warning: Skipping {} (no frontmatter)", path.display());
+                failed += 1;
+                continue;
+            }
+        };
+
+        // Set the file time
+        match set_file_time(&path, &frontmatter.created_at) {
+            Ok(_) => {
+                // Also fix the corresponding JSON file if it exists
+                let filename = path.file_stem().unwrap().to_str().unwrap();
+                let json_path = paths.raw_dir.join(format!("{}.json", filename));
+                if json_path.exists() {
+                    if let Err(e) = set_file_time(&json_path, &frontmatter.created_at) {
+                        eprintln!(
+                            "Warning: Failed to set time for {}: {}",
+                            json_path.display(),
+                            e
+                        );
+                    }
+                }
+                fixed += 1;
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to set time for {}: {}", path.display(), e);
+                failed += 1;
+            }
+        }
+    }
+
+    println!("✅ Fixed dates for {} files", fixed);
+    if failed > 0 {
+        println!("⚠️  {} files failed", failed);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::storage::Paths;
