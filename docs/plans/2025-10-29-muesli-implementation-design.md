@@ -210,7 +210,7 @@ $DATA/
 
 Use `insta` for snapshot testing:
 - Both formats (segments, monologues)
-- Edge cases (missing fields, unparseable timestamps)
+- Edge cases (missing fields, unparsable timestamps)
 - Frontmatter round-trip
 
 ---

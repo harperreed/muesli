@@ -4,10 +4,13 @@
 use crate::{
     api::ApiClient,
     convert::to_markdown,
-    storage::{read_frontmatter, write_atomic, Paths},
+    storage::{write_atomic, Paths},
     util::slugify,
     Result,
 };
+
+#[cfg(feature = "index")]
+use crate::storage::read_frontmatter;
 use chrono::{DateTime, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
@@ -48,7 +51,11 @@ fn save_cache(
     Ok(())
 }
 
-pub fn sync_all(client: &ApiClient, paths: &Paths, reindex: bool) -> Result<()> {
+pub fn sync_all(
+    client: &ApiClient,
+    paths: &Paths,
+    #[cfg_attr(not(feature = "index"), allow(unused_variables))] reindex: bool,
+) -> Result<()> {
     paths.ensure_dirs()?;
 
     // Handle reindex mode (feature-gated)
@@ -306,13 +313,13 @@ fn reindex_all(paths: &Paths) -> Result<()> {
         .map_err(|e| crate::Error::Indexing(format!("Failed to create index writer: {}", e)))?;
 
     // Scan transcripts directory
-    let entries = fs::read_dir(&paths.transcripts_dir).map_err(|e| crate::Error::Filesystem(e))?;
+    let entries = fs::read_dir(&paths.transcripts_dir).map_err(crate::Error::Filesystem)?;
 
     let mut indexed = 0;
     let mut failed = 0;
 
     for entry in entries {
-        let entry = entry.map_err(|e| crate::Error::Filesystem(e))?;
+        let entry = entry.map_err(crate::Error::Filesystem)?;
         let path = entry.path();
 
         // Only process .md files
@@ -331,7 +338,7 @@ fn reindex_all(paths: &Paths) -> Result<()> {
         };
 
         // Read the markdown body
-        let content = fs::read_to_string(&path).map_err(|e| crate::Error::Filesystem(e))?;
+        let content = fs::read_to_string(&path).map_err(crate::Error::Filesystem)?;
 
         // Extract body after frontmatter (skip YAML block)
         let body = if content.starts_with("---\n") {

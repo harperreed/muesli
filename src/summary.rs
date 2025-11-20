@@ -97,11 +97,9 @@ fn chunk_transcript(text: &str, max_chars: usize) -> Vec<String> {
     let mut current_chunk = String::new();
 
     for line in text.lines() {
-        if current_chunk.len() + line.len() + 1 > max_chars {
-            if !current_chunk.is_empty() {
-                chunks.push(current_chunk.clone());
-                current_chunk.clear();
-            }
+        if current_chunk.len() + line.len() + 1 > max_chars && !current_chunk.is_empty() {
+            chunks.push(current_chunk.clone());
+            current_chunk.clear();
         }
         current_chunk.push_str(line);
         current_chunk.push('\n');
