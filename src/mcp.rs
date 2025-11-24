@@ -88,6 +88,14 @@ struct CompareDocumentsRequest {
     doc_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct FollowUpCheckRequest {
+    /// Previous meeting document ID
+    previous_doc_id: String,
+    /// Current meeting document ID
+    current_doc_id: String,
+}
+
 #[tool_router]
 impl MuesliMcpService {
     #[tool(description = "List all meeting transcripts with metadata")]
@@ -466,6 +474,219 @@ impl MuesliMcpService {
 5. **Trend Analysis**: What patterns emerge across meetings?
 
 # Transcripts
+
+{}"#,
+            transcripts.join("\n\n---\n\n")
+        );
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            prompt_text,
+        )]
+    }
+
+    #[prompt(
+        name = "extract_action_items",
+        description = "Extract all action items with owners and deadlines from a meeting"
+    )]
+    async fn extract_action_items_prompt(
+        &self,
+        params: Parameters<GetDocumentRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_id = &params.0.doc_id;
+
+        if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                    continue;
+                }
+
+                if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                    if &fm.doc_id == doc_id {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            let prompt_text = format!(
+                                r#"Please extract all action items from this meeting transcript.
+
+For each action item, identify:
+1. **Task Description**: What needs to be done?
+2. **Owner**: Who is responsible? (if mentioned)
+3. **Deadline**: When is it due? (if mentioned)
+4. **Status**: Was it marked as completed, in-progress, or new?
+5. **Dependencies**: Does it depend on anything else?
+
+Format as a structured list with clear sections.
+
+# Meeting Transcript
+
+{}"#,
+                                content
+                            );
+
+                            return vec![PromptMessage::new_text(
+                                PromptMessageRole::User,
+                                prompt_text,
+                            )];
+                        }
+                    }
+                }
+            }
+        }
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!("Error: Document not found: {}", doc_id),
+        )]
+    }
+
+    #[prompt(
+        name = "find_decisions",
+        description = "Extract key decisions made in one or more meetings"
+    )]
+    async fn find_decisions_prompt(
+        &self,
+        params: Parameters<CompareDocumentsRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_ids = &params.0.doc_ids;
+        let mut transcripts = Vec::new();
+
+        for doc_id in doc_ids {
+            if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+
+                    if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                        continue;
+                    }
+
+                    if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                        if &fm.doc_id == doc_id {
+                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                transcripts.push(format!(
+                                    "## Meeting: {} ({})\n\n{}",
+                                    fm.title.unwrap_or_else(|| "Untitled".to_string()),
+                                    fm.created_at.format("%Y-%m-%d"),
+                                    content
+                                ));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if transcripts.is_empty() {
+            return vec![PromptMessage::new_text(
+                PromptMessageRole::User,
+                "Error: No matching documents found".to_string(),
+            )];
+        }
+
+        let prompt_text = format!(
+            r#"Please identify all key decisions made in these meeting transcripts.
+
+For each decision:
+1. **Decision**: What was decided?
+2. **Rationale**: Why was this decision made?
+3. **Alternatives Considered**: What other options were discussed?
+4. **Impact**: Who/what does this affect?
+5. **Date**: When was this decided?
+6. **Follow-up Required**: Any actions needed?
+
+Group decisions by theme or category if multiple meetings are provided.
+
+# Transcripts
+
+{}"#,
+            transcripts.join("\n\n---\n\n")
+        );
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            prompt_text,
+        )]
+    }
+
+    #[prompt(
+        name = "follow_up_check",
+        description = "Compare two meetings to check if action items were completed and decisions implemented"
+    )]
+    async fn follow_up_check_prompt(
+        &self,
+        params: Parameters<FollowUpCheckRequest>,
+    ) -> Vec<PromptMessage> {
+        let mut transcripts = Vec::new();
+
+        // Load both meetings
+        for doc_id in [&params.0.previous_doc_id, &params.0.current_doc_id] {
+            if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+
+                    if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                        continue;
+                    }
+
+                    if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                        if &fm.doc_id == doc_id {
+                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                let label = if doc_id == &params.0.previous_doc_id {
+                                    "Previous"
+                                } else {
+                                    "Current"
+                                };
+                                transcripts.push(format!(
+                                    "## {} Meeting: {} ({})\n\n{}",
+                                    label,
+                                    fm.title.unwrap_or_else(|| "Untitled".to_string()),
+                                    fm.created_at.format("%Y-%m-%d"),
+                                    content
+                                ));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if transcripts.len() < 2 {
+            return vec![PromptMessage::new_text(
+                PromptMessageRole::User,
+                "Error: Could not find both meetings".to_string(),
+            )];
+        }
+
+        let prompt_text = format!(
+            r#"Please compare these two meetings to track progress and accountability.
+
+Analyze:
+
+1. **Action Items Follow-Through**:
+   - Which action items from the previous meeting were completed?
+   - Which are still pending or in progress?
+   - Which weren't mentioned (possibly forgotten)?
+
+2. **Decision Implementation**:
+   - Were decisions from the previous meeting implemented?
+   - Were any decisions reversed or modified?
+   - What was the outcome?
+
+3. **New vs. Recurring Issues**:
+   - What new topics emerged?
+   - What issues came up again (might indicate systemic problems)?
+
+4. **Progress Assessment**:
+   - Overall, is the team making progress on goals?
+   - Are there blockers preventing forward movement?
+
+5. **Accountability**:
+   - Who followed through on commitments?
+   - Where were there gaps in ownership?
+
+# Meetings
 
 {}"#,
             transcripts.join("\n\n---\n\n")
