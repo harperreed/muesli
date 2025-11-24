@@ -52,6 +52,16 @@ struct GetDocumentRequest {
     doc_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct SyncDocumentsRequest {
+    /// API token for authentication (optional, uses default auth if not provided)
+    #[serde(default)]
+    token: Option<String>,
+    /// Force reindex of all documents without re-downloading (requires index feature)
+    #[serde(default)]
+    reindex: bool,
+}
+
 #[tool_router]
 impl MuesliMcpService {
     #[tool(description = "List all meeting transcripts with metadata")]
@@ -210,6 +220,41 @@ impl MuesliMcpService {
             format!("Document not found: {}", params.0.doc_id),
             None,
         ))
+    }
+
+    #[tool(description = "Sync new meeting transcripts from the API")]
+    async fn sync_documents(
+        &self,
+        params: Parameters<SyncDocumentsRequest>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        // Create API client
+        let token = if let Some(ref t) = params.0.token {
+            t.clone()
+        } else {
+            crate::auth::resolve_token(None).map_err(|e| {
+                McpError::internal_error(format!("Failed to resolve auth token: {}", e), None)
+            })?
+        };
+
+        let client = crate::api::ApiClient::new(token, None).map_err(|e| {
+            McpError::internal_error(format!("Failed to create API client: {}", e), None)
+        })?;
+
+        // Perform sync
+        #[cfg(feature = "index")]
+        {
+            crate::sync::sync_all(&client, &self.paths, params.0.reindex)
+                .map_err(|e| McpError::internal_error(format!("Sync failed: {}", e), None))?;
+        }
+        #[cfg(not(feature = "index"))]
+        {
+            crate::sync::sync_all(&client, &self.paths, false)
+                .map_err(|e| McpError::internal_error(format!("Sync failed: {}", e), None))?;
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            "Sync completed successfully".to_string(),
+        )]))
     }
 }
 
