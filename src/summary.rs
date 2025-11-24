@@ -38,6 +38,8 @@ pub struct SummaryConfig {
     pub model: String,
     pub context_window_chars: usize,
     pub custom_prompt: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 impl Default for SummaryConfig {
@@ -46,6 +48,7 @@ impl Default for SummaryConfig {
             model: "gpt-5".to_string(),
             context_window_chars: 300_000, // ~400K tokens for GPT-5 API
             custom_prompt: None,
+            temperature: None, // GPT-5 only supports default temperature (1.0)
         }
     }
 }
@@ -126,10 +129,15 @@ async fn summarize_chunk(
             .map_err(|e| Error::Summarization(format!("Failed to build user message: {}", e)))?,
     )];
 
-    let request = CreateChatCompletionRequestArgs::default()
-        .model(&config.model)
-        .messages(messages)
-        .temperature(0.3)
+    let mut request_builder = CreateChatCompletionRequestArgs::default();
+    request_builder.model(&config.model).messages(messages);
+
+    // Only set temperature if configured (GPT-5 doesn't support custom temperature)
+    if let Some(temp) = config.temperature {
+        request_builder.temperature(temp);
+    }
+
+    let request = request_builder
         .build()
         .map_err(|e| Error::Summarization(format!("Failed to build request: {}", e)))?;
 
