@@ -127,6 +127,10 @@ pub enum Commands {
         #[arg(long)]
         save: bool,
     },
+
+    /// Start MCP (Model Context Protocol) server for AI assistant integration
+    #[cfg(feature = "mcp")]
+    Mcp,
 }
 
 impl Cli {

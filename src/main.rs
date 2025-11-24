@@ -288,6 +288,14 @@ fn run() -> Result<()> {
                 println!("\n{}\n", summary);
             }
         }
+        #[cfg(feature = "mcp")]
+        muesli::cli::Commands::Mcp => {
+            // Run MCP server asynchronously
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(muesli::mcp::serve_mcp(cli.data_dir))?;
+        }
     }
 
     Ok(())
