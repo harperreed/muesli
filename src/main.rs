@@ -170,8 +170,70 @@ fn run() -> Result<()> {
             muesli::summary::set_api_key_in_keychain(&api_key)?;
         }
         #[cfg(feature = "summaries")]
+        muesli::cli::Commands::SetConfig {
+            model,
+            context_window,
+            prompt_file,
+            show,
+        } => {
+            let paths = Paths::new(cli.data_dir)?;
+            let config_path = paths.data_dir.join("summary_config.json");
+
+            if show {
+                // Show current config
+                let config = muesli::summary::SummaryConfig::load(&config_path)?;
+                println!("Current summarization configuration:");
+                println!("  Model: {}", config.model);
+                println!(
+                    "  Context window: {} characters",
+                    config.context_window_chars
+                );
+                println!(
+                    "  Custom prompt: {}",
+                    if config.custom_prompt.is_some() {
+                        "Yes"
+                    } else {
+                        "No (using default)"
+                    }
+                );
+                if let Some(prompt) = &config.custom_prompt {
+                    println!("\nCustom prompt:");
+                    println!("{}", prompt);
+                }
+                return Ok(());
+            }
+
+            // Load existing config or create default
+            let mut config = muesli::summary::SummaryConfig::load(&config_path)?;
+
+            // Update fields if provided
+            if let Some(m) = model {
+                config.model = m;
+            }
+            if let Some(cw) = context_window {
+                config.context_window_chars = cw;
+            }
+            if let Some(pf) = prompt_file {
+                let prompt = std::fs::read_to_string(&pf)?;
+                config.custom_prompt = Some(prompt);
+            }
+
+            // Save config
+            config.save(&config_path, &paths.tmp_dir)?;
+            println!("✅ Configuration saved");
+            println!("  Model: {}", config.model);
+            println!(
+                "  Context window: {} characters",
+                config.context_window_chars
+            );
+        }
+        #[cfg(feature = "summaries")]
         muesli::cli::Commands::Summarize { doc_id, save } => {
             let paths = Paths::new(cli.data_dir)?;
+
+            // Load config
+            let config_path = paths.data_dir.join("summary_config.json");
+            let config = muesli::summary::SummaryConfig::load(&config_path)?;
 
             // Find the markdown file for this doc_id
             let md_path = find_transcript_by_id(&paths, &doc_id)?;
@@ -195,11 +257,16 @@ fn run() -> Result<()> {
                 .or_else(|_| muesli::summary::get_api_key_from_keychain())?;
 
             // Run async summarization
-            println!("Summarizing transcript...");
+            println!(
+                "Summarizing with {} (context window: {} chars)...",
+                config.model, config.context_window_chars
+            );
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
-            let summary = rt.block_on(muesli::summary::summarize_transcript(&body, &api_key))?;
+            let summary = rt.block_on(muesli::summary::summarize_transcript(
+                &body, &api_key, &config,
+            ))?;
 
             if save {
                 // Save to summaries directory

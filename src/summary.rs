@@ -10,8 +10,10 @@ use async_openai::{
     },
     Client,
 };
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-const SUMMARY_PROMPT: &str = r#"You are an expert at summarizing meeting transcripts.
+const DEFAULT_SUMMARY_PROMPT: &str = r#"You are an expert at summarizing meeting transcripts.
 
 Summarize the following meeting transcript in a clear, structured format:
 
@@ -22,12 +24,60 @@ Summarize the following meeting transcript in a clear, structured format:
 
 Be concise but comprehensive. Focus on actionable insights."#;
 
-pub async fn summarize_transcript(transcript: &str, api_key: &str) -> Result<String> {
-    let config = OpenAIConfig::new().with_api_key(api_key);
-    let client = Client::with_config(config);
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SummaryConfig {
+    pub model: String,
+    pub context_window_chars: usize,
+    pub custom_prompt: Option<String>,
+}
 
-    // Chunk if too long (OpenAI has token limits)
-    let chunks = chunk_transcript(transcript, 6000);
+impl Default for SummaryConfig {
+    fn default() -> Self {
+        Self {
+            model: "gpt-5".to_string(),
+            context_window_chars: 300_000, // ~400K tokens for GPT-5 API
+            custom_prompt: None,
+        }
+    }
+}
+
+impl SummaryConfig {
+    pub fn load(config_path: &Path) -> Result<Self> {
+        if !config_path.exists() {
+            return Ok(Self::default());
+        }
+
+        let content = std::fs::read_to_string(config_path)?;
+        serde_json::from_str(&content).map_err(|e| {
+            Error::Filesystem(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse summary config: {}", e),
+            ))
+        })
+    }
+
+    pub fn save(&self, config_path: &Path, tmp_dir: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        crate::storage::write_atomic(config_path, json.as_bytes(), tmp_dir)
+    }
+
+    pub fn prompt(&self) -> &str {
+        self.custom_prompt
+            .as_deref()
+            .unwrap_or(DEFAULT_SUMMARY_PROMPT)
+    }
+}
+
+pub async fn summarize_transcript(
+    transcript: &str,
+    api_key: &str,
+    config: &SummaryConfig,
+) -> Result<String> {
+    let openai_config = OpenAIConfig::new().with_api_key(api_key);
+    let client = Client::with_config(openai_config);
+
+    // Chunk if too long (based on configured context window)
+    let chunks = chunk_transcript(transcript, config.context_window_chars);
 
     if chunks.len() > 1 {
         // Multiple chunks - summarize each then combine
@@ -35,24 +85,28 @@ pub async fn summarize_transcript(transcript: &str, api_key: &str) -> Result<Str
 
         for (i, chunk) in chunks.iter().enumerate() {
             println!("Summarizing chunk {}/{}...", i + 1, chunks.len());
-            let summary = summarize_chunk(&client, chunk).await?;
+            let summary = summarize_chunk(&client, chunk, config).await?;
             chunk_summaries.push(summary);
         }
 
         // Combine summaries
         let combined = chunk_summaries.join("\n\n---\n\n");
-        summarize_chunk(&client, &combined).await
+        summarize_chunk(&client, &combined, config).await
     } else {
         // Single chunk
-        summarize_chunk(&client, &chunks[0]).await
+        summarize_chunk(&client, &chunks[0], config).await
     }
 }
 
-async fn summarize_chunk(client: &Client<OpenAIConfig>, text: &str) -> Result<String> {
+async fn summarize_chunk(
+    client: &Client<OpenAIConfig>,
+    text: &str,
+    config: &SummaryConfig,
+) -> Result<String> {
     let messages = vec![
         ChatCompletionRequestMessage::System(
             ChatCompletionRequestSystemMessageArgs::default()
-                .content(SUMMARY_PROMPT)
+                .content(config.prompt())
                 .build()
                 .map_err(|e| {
                     Error::Summarization(format!("Failed to build system message: {}", e))
@@ -69,7 +123,7 @@ async fn summarize_chunk(client: &Client<OpenAIConfig>, text: &str) -> Result<St
     ];
 
     let request = CreateChatCompletionRequestArgs::default()
-        .model("gpt-4o-mini")
+        .model(&config.model)
         .messages(messages)
         .temperature(0.3)
         .build()

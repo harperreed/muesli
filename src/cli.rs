@@ -97,6 +97,26 @@ pub enum Commands {
         api_key: String,
     },
 
+    /// Configure summarization settings (model, context window, prompt)
+    #[cfg(feature = "summaries")]
+    SetConfig {
+        /// OpenAI model to use (e.g., gpt-5, gpt-4o, gpt-4o-mini)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Context window size in characters
+        #[arg(long)]
+        context_window: Option<usize>,
+
+        /// Path to custom prompt file
+        #[arg(long)]
+        prompt_file: Option<std::path::PathBuf>,
+
+        /// Show current configuration
+        #[arg(long)]
+        show: bool,
+    },
+
     /// Summarize a transcript using OpenAI
     #[cfg(feature = "summaries")]
     Summarize {
