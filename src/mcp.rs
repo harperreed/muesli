@@ -3,9 +3,18 @@
 
 use crate::storage::Paths;
 use rmcp::{
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters, ServerHandler},
-    model::{CallToolResult, Content, ErrorData as McpError},
+    handler::server::{
+        router::{prompt::PromptRouter, tool::ToolRouter},
+        wrapper::Parameters,
+        ServerHandler,
+    },
+    model::{
+        CallToolResult, Content, ErrorData as McpError, GetPromptRequestParam, GetPromptResult,
+        ListPromptsResult, PaginatedRequestParam, PromptMessage, PromptMessageRole,
+    },
+    prompt, prompt_handler, prompt_router,
     schemars::JsonSchema,
+    service::{RequestContext, RoleServer},
     tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
@@ -15,6 +24,7 @@ use std::sync::Arc;
 pub struct MuesliMcpService {
     paths: Arc<Paths>,
     tool_router: ToolRouter<Self>,
+    prompt_router: PromptRouter<Self>,
 }
 
 impl MuesliMcpService {
@@ -23,6 +33,7 @@ impl MuesliMcpService {
         Ok(Self {
             paths: Arc::new(paths),
             tool_router: Self::tool_router(),
+            prompt_router: Self::prompt_router(),
         })
     }
 }
@@ -60,6 +71,21 @@ struct SyncDocumentsRequest {
     /// Force reindex of all documents without re-downloading (requires index feature)
     #[serde(default)]
     reindex: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct SummarizeDocumentRequest {
+    /// Document ID to summarize
+    doc_id: String,
+    /// OpenAI API key (optional, uses keychain or env if not provided)
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+struct CompareDocumentsRequest {
+    /// Array of document IDs to compare
+    doc_ids: Vec<String>,
 }
 
 #[tool_router]
@@ -256,9 +282,204 @@ impl MuesliMcpService {
             "Sync completed successfully".to_string(),
         )]))
     }
+
+    #[tool(description = "Generate AI summary of a meeting transcript")]
+    #[cfg(feature = "summaries")]
+    async fn summarize_document(
+        &self,
+        params: Parameters<SummarizeDocumentRequest>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        // Find the markdown file
+        let entries = std::fs::read_dir(&self.paths.transcripts_dir).map_err(|e| {
+            McpError::internal_error(format!("Failed to read directory: {}", e), None)
+        })?;
+
+        let mut transcript_path = None;
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                McpError::internal_error(format!("Failed to read entry: {}", e), None)
+            })?;
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                continue;
+            }
+
+            if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                if fm.doc_id == params.0.doc_id {
+                    transcript_path = Some(path);
+                    break;
+                }
+            }
+        }
+
+        let path = transcript_path.ok_or_else(|| {
+            McpError::invalid_params(format!("Document not found: {}", params.0.doc_id), None)
+        })?;
+
+        // Read transcript content
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read file: {}", e), None))?;
+
+        // Extract body (skip frontmatter)
+        let body = if content.starts_with("---\n") {
+            content
+                .split("---\n")
+                .nth(2)
+                .unwrap_or(&content)
+                .to_string()
+        } else {
+            content
+        };
+
+        // Get API key
+        let api_key = if let Some(ref key) = params.0.api_key {
+            key.clone()
+        } else {
+            std::env::var("OPENAI_API_KEY")
+                .or_else(|_| crate::summary::get_api_key_from_keychain())
+                .map_err(|e| {
+                    McpError::internal_error(format!("Failed to get OpenAI API key: {}", e), None)
+                })?
+        };
+
+        // Load config
+        let config_path = self.paths.data_dir.join("summary_config.json");
+        let config = crate::summary::SummaryConfig::load(&config_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+
+        // Generate summary
+        let summary = crate::summary::summarize_transcript(&body, &api_key, &config)
+            .await
+            .map_err(|e| McpError::internal_error(format!("Summarization failed: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(summary)]))
+    }
+}
+
+// Prompt implementations
+#[prompt_router]
+impl MuesliMcpService {
+    #[prompt(
+        name = "analyze_meeting",
+        description = "Generate a structured analysis prompt for a meeting transcript"
+    )]
+    async fn analyze_meeting_prompt(
+        &self,
+        params: Parameters<GetDocumentRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_id = &params.0.doc_id;
+
+        // Find and read the document
+        if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                    continue;
+                }
+
+                if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                    if &fm.doc_id == doc_id {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            let prompt_text = format!(
+                                r#"Please analyze this meeting transcript and provide:
+
+1. **Key Decisions**: What decisions were made?
+2. **Action Items**: What tasks were assigned and to whom?
+3. **Discussion Topics**: What were the main topics discussed?
+4. **Open Questions**: What questions remain unanswered?
+5. **Next Steps**: What are the recommended next steps?
+
+# Meeting Transcript
+
+{}"#,
+                                content
+                            );
+
+                            return vec![PromptMessage::new_text(
+                                PromptMessageRole::User,
+                                prompt_text,
+                            )];
+                        }
+                    }
+                }
+            }
+        }
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!("Error: Document not found: {}", doc_id),
+        )]
+    }
+
+    #[prompt(
+        name = "compare_meetings",
+        description = "Generate a prompt to compare multiple meeting transcripts"
+    )]
+    async fn compare_meetings_prompt(
+        &self,
+        params: Parameters<CompareDocumentsRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_ids = &params.0.doc_ids;
+        let mut transcripts = Vec::new();
+
+        for doc_id in doc_ids {
+            if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+
+                    if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                        continue;
+                    }
+
+                    if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                        if &fm.doc_id == doc_id {
+                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                transcripts.push(format!(
+                                    "## Meeting: {}\n\n{}",
+                                    fm.title.unwrap_or_else(|| "Untitled".to_string()),
+                                    content
+                                ));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if transcripts.is_empty() {
+            return vec![PromptMessage::new_text(
+                PromptMessageRole::User,
+                "Error: No matching documents found".to_string(),
+            )];
+        }
+
+        let prompt_text = format!(
+            r#"Please compare these meeting transcripts and provide:
+
+1. **Common Themes**: What topics appear across multiple meetings?
+2. **Progress Tracking**: How have discussed items evolved over time?
+3. **Recurring Issues**: What problems keep coming up?
+4. **Stakeholder Involvement**: Who participates in which discussions?
+5. **Trend Analysis**: What patterns emerge across meetings?
+
+# Transcripts
+
+{}"#,
+            transcripts.join("\n\n---\n\n")
+        );
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            prompt_text,
+        )]
+    }
 }
 
 #[tool_handler]
+#[prompt_handler]
 impl ServerHandler for MuesliMcpService {}
 
 pub async fn serve_mcp(data_dir: Option<std::path::PathBuf>) -> crate::Result<()> {
