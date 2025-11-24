@@ -697,6 +697,160 @@ Analyze:
             prompt_text,
         )]
     }
+
+    #[prompt(
+        name = "write_followup_email",
+        description = "Generate a professional follow-up email after a meeting"
+    )]
+    async fn write_followup_email_prompt(
+        &self,
+        params: Parameters<GetDocumentRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_id = &params.0.doc_id;
+
+        if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                    continue;
+                }
+
+                if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                    if &fm.doc_id == doc_id {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            let meeting_title =
+                                fm.title.unwrap_or_else(|| "Recent Meeting".to_string());
+                            let meeting_date = fm.created_at.format("%B %d, %Y");
+
+                            let prompt_text = format!(
+                                r#"Please write a professional follow-up email for this meeting.
+
+The email should include:
+
+1. **Subject Line**: Clear and specific
+2. **Opening**: Brief thank you and context
+3. **Key Takeaways**: Main points discussed (2-3 bullet points)
+4. **Decisions Made**: Any decisions reached
+5. **Action Items**: Clear list with owners and deadlines
+   - Format: "- [Owner] will [task] by [deadline]"
+6. **Next Steps**: What happens next
+7. **Questions/Blockers**: Any open questions or blockers that need addressing
+8. **Closing**: Professional sign-off
+
+**Meeting Details:**
+- Title: {}
+- Date: {}
+
+Keep the tone professional but friendly. Be concise and actionable.
+
+# Meeting Transcript
+
+{}"#,
+                                meeting_title, meeting_date, content
+                            );
+
+                            return vec![PromptMessage::new_text(
+                                PromptMessageRole::User,
+                                prompt_text,
+                            )];
+                        }
+                    }
+                }
+            }
+        }
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!("Error: Document not found: {}", doc_id),
+        )]
+    }
+
+    #[prompt(
+        name = "schedule_followup_meeting",
+        description = "Generate agenda and details for a follow-up meeting"
+    )]
+    async fn schedule_followup_meeting_prompt(
+        &self,
+        params: Parameters<GetDocumentRequest>,
+    ) -> Vec<PromptMessage> {
+        let doc_id = &params.0.doc_id;
+
+        if let Ok(entries) = std::fs::read_dir(&self.paths.transcripts_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+
+                if path.extension().and_then(|s| s.to_str()) != Some("md") {
+                    continue;
+                }
+
+                if let Ok(Some(fm)) = crate::storage::read_frontmatter(&path) {
+                    if &fm.doc_id == doc_id {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            let meeting_title =
+                                fm.title.unwrap_or_else(|| "Recent Meeting".to_string());
+                            let meeting_date = fm.created_at.format("%B %d, %Y");
+
+                            let prompt_text = format!(
+                                r#"Based on this meeting, please create a plan for a follow-up meeting.
+
+Provide:
+
+1. **Suggested Meeting Title**: Clear and specific
+
+2. **Recommended Timing**:
+   - When should this meeting happen?
+   - How much time is needed? (30/60/90 minutes)
+
+3. **Required Attendees**:
+   - Who must attend and why?
+   - Any new stakeholders to include?
+
+4. **Pre-Meeting Preparation**:
+   - What should attendees review/prepare beforehand?
+   - Any materials to send in advance?
+
+5. **Proposed Agenda**:
+   - Opening (5 min): Recap of last meeting
+   - Main Topics (with time allocations)
+   - Action Item Review
+   - Decisions Needed
+   - Next Steps & Closing
+
+6. **Success Criteria**:
+   - What should be accomplished in this meeting?
+   - What decisions need to be made?
+
+7. **Follow-Up Items from Previous Meeting**:
+   - Which action items should be reviewed?
+   - Which decisions need verification?
+   - What open questions need resolution?
+
+**Previous Meeting:**
+- Title: {}
+- Date: {}
+
+# Previous Meeting Transcript
+
+{}"#,
+                                meeting_title, meeting_date, content
+                            );
+
+                            return vec![PromptMessage::new_text(
+                                PromptMessageRole::User,
+                                prompt_text,
+                            )];
+                        }
+                    }
+                }
+            }
+        }
+
+        vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            format!("Error: Document not found: {}", doc_id),
+        )]
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
