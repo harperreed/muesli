@@ -478,9 +478,35 @@ impl MuesliMcpService {
     }
 }
 
-#[tool_handler]
-#[prompt_handler]
-impl ServerHandler for MuesliMcpService {}
+#[tool_handler(router = self.tool_router)]
+#[prompt_handler(router = self.prompt_router)]
+impl ServerHandler for MuesliMcpService {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        use rmcp::model::{Implementation, PromptsCapability, ServerCapabilities, ToolsCapability};
+
+        rmcp::model::ServerInfo {
+            protocol_version: rmcp::model::ProtocolVersion::default(),
+            capabilities: ServerCapabilities {
+                tools: Some(ToolsCapability::default()),
+                prompts: Some(PromptsCapability::default()),
+                ..Default::default()
+            },
+            server_info: Implementation {
+                name: "muesli".to_string(),
+                title: Some("Muesli Meeting Transcript Manager".to_string()),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(
+                "Muesli MCP server for managing meeting transcripts. \
+                 Use tools to list, search, sync, and summarize transcripts. \
+                 Use prompts for structured analysis of meetings."
+                    .to_string(),
+            ),
+        }
+    }
+}
 
 pub async fn serve_mcp(data_dir: Option<std::path::PathBuf>) -> crate::Result<()> {
     use rmcp::{transport::stdio, ServiceExt};
