@@ -5,24 +5,33 @@ use crate::{Error, Result};
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
-        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
+        ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
+        CreateChatCompletionRequestArgs,
     },
     Client,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const DEFAULT_SUMMARY_PROMPT: &str = r#"You are an expert at summarizing meeting transcripts.
+const DEFAULT_SUMMARY_PROMPT: &str = r#"You are an expert at turning messy transcripts into high-resolution, action-oriented summaries.
 
-Summarize the following meeting transcript in a clear, structured format:
+Given the transcript below, produce a structured summary with these sections:
 
-1. **Key Topics** (3-5 bullet points)
-2. **Action Items** (if any, with who/what)
-3. **Decisions Made** (if any)
-4. **Follow-ups** (if any)
+1. Meeting Snapshot
+2. Executive Summary (3–7 bullets)
+3. Key Decisions (or "None")
+4. Action Items (owner, task, due, priority, source)
+5. Discussion Highlights by Topic
+6. Risks, Concerns, and Open Questions
+7. Nuanced Observations & Dynamics
+8. Ambiguities, Gaps, and Things You Refused to Guess
 
-Be concise but comprehensive. Focus on actionable insights."#;
+Rules:
+- Use headings and bullet points.
+- Preserve important names, dates, and numbers accurately.
+- Only use information from the transcript; label any inferences as "(inferred)".
+- Be explicit when something is unclear, missing, or not specified.
+- Ignore small talk; focus on substance."#;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SummaryConfig {
@@ -103,24 +112,19 @@ async fn summarize_chunk(
     text: &str,
     config: &SummaryConfig,
 ) -> Result<String> {
-    let messages = vec![
-        ChatCompletionRequestMessage::System(
-            ChatCompletionRequestSystemMessageArgs::default()
-                .content(config.prompt())
-                .build()
-                .map_err(|e| {
-                    Error::Summarization(format!("Failed to build system message: {}", e))
-                })?,
-        ),
-        ChatCompletionRequestMessage::User(
-            ChatCompletionRequestUserMessageArgs::default()
-                .content(text)
-                .build()
-                .map_err(|e| {
-                    Error::Summarization(format!("Failed to build user message: {}", e))
-                })?,
-        ),
-    ];
+    // Build the full prompt with transcript embedded
+    let full_prompt = format!(
+        "{}\n\nTranscript:\n<<<TRANSCRIPT_START>>>\n{}\n<<<TRANSCRIPT_END>>>",
+        config.prompt(),
+        text
+    );
+
+    let messages = vec![ChatCompletionRequestMessage::User(
+        ChatCompletionRequestUserMessageArgs::default()
+            .content(full_prompt)
+            .build()
+            .map_err(|e| Error::Summarization(format!("Failed to build user message: {}", e)))?,
+    )];
 
     let request = CreateChatCompletionRequestArgs::default()
         .model(&config.model)
@@ -240,8 +244,9 @@ mod tests {
 
     #[test]
     fn test_summary_prompt_format() {
-        assert!(SUMMARY_PROMPT.contains("Key Topics"));
-        assert!(SUMMARY_PROMPT.contains("Action Items"));
-        assert!(SUMMARY_PROMPT.contains("Decisions Made"));
+        assert!(DEFAULT_SUMMARY_PROMPT.contains("Meeting Snapshot"));
+        assert!(DEFAULT_SUMMARY_PROMPT.contains("Action Items"));
+        assert!(DEFAULT_SUMMARY_PROMPT.contains("Key Decisions"));
+        assert!(DEFAULT_SUMMARY_PROMPT.contains("Ambiguities, Gaps"));
     }
 }
