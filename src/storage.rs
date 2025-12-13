@@ -3,8 +3,8 @@
 
 use crate::{Error, Frontmatter, Result};
 use chrono::{DateTime, Utc};
-use directories::ProjectDirs;
 use filetime::FileTime;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,15 +23,19 @@ impl Paths {
         let data_dir = if let Some(dir) = data_dir_override {
             dir
         } else {
-            ProjectDirs::from("", "", "muesli")
-                .ok_or_else(|| {
+            // XDG Base Directory spec: use $XDG_DATA_HOME or fall back to ~/.local/share
+            let base = if let Ok(xdg_data) = env::var("XDG_DATA_HOME") {
+                PathBuf::from(xdg_data)
+            } else {
+                let home = env::var("HOME").map_err(|_| {
                     Error::Filesystem(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
-                        "Could not determine data directory",
+                        "Could not determine home directory (HOME not set)",
                     ))
-                })?
-                .data_dir()
-                .to_path_buf()
+                })?;
+                PathBuf::from(home).join(".local").join("share")
+            };
+            base.join("muesli")
         };
 
         Ok(Paths {
