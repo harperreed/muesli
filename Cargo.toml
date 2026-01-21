@@ -48,7 +48,7 @@ tempfile = "3.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = []
+default = ["index", "summaries", "embeddings", "mcp"]
 summaries = ["dep:keyring", "dep:async-openai", "dep:tokio"]
 index = ["dep:tantivy"]
 embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", "dep:ndarray"]

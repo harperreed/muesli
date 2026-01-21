@@ -155,35 +155,61 @@ Summaries include:
 - Decisions made
 - Follow-up items
 
-## Feature Flags
-
-Muesli uses Cargo features to keep the binary size small when you don't need all functionality:
-
-| Feature | Size | Description |
-|---------|------|-------------|
-| (none) | 5MB | Core sync only |
-| `index` | 9MB | + Full-text search (Tantivy) |
-| `embeddings` | 17MB | + Semantic search (ONNX, e5-small-v2) |
-| `summaries` | 11MB | + AI summaries (OpenAI) |
-| `--all-features` | 21MB | Everything |
-
-### Building with Features
+### Configure Summarization
 
 ```bash
-# Core only (sync, list, fetch)
+# Show current configuration
+muesli set-config --show
+
+# Change the OpenAI model
+muesli set-config --model gpt-4o
+
+# Set context window size (in characters)
+muesli set-config --context-window 8000
+
+# Use a custom prompt file
+muesli set-config --prompt-file /path/to/prompt.txt
+```
+
+### MCP Server
+
+Muesli can run as a [Model Context Protocol](https://modelcontextprotocol.io/) server, allowing AI assistants like Claude to search and access your meeting transcripts.
+
+```bash
+# Start the MCP server
+muesli mcp
+```
+
+Configure in your AI assistant's MCP settings to enable transcript search and retrieval.
+
+## Feature Flags
+
+All features are enabled by default. If you need a smaller binary, you can disable features:
+
+| Feature | Description |
+|---------|-------------|
+| `index` | Full-text search (Tantivy) |
+| `embeddings` | Semantic search (ONNX, e5-small-v2) |
+| `summaries` | AI summaries (OpenAI) |
+| `mcp` | MCP server for AI assistant integration |
+
+### Building with Specific Features
+
+```bash
+# Default build (all features, ~21MB)
 cargo build --release
 
-# With text search
-cargo build --release --features index
+# Core only (sync, list, fetch - ~5MB)
+cargo build --release --no-default-features
 
-# With semantic search (includes text search)
-cargo build --release --features embeddings
+# With only text search (~9MB)
+cargo build --release --no-default-features --features index
 
-# With summaries
-cargo build --release --features summaries
+# With semantic search (includes text search, ~17MB)
+cargo build --release --no-default-features --features embeddings
 
-# Everything
-cargo build --release --all-features
+# With summaries (~11MB)
+cargo build --release --no-default-features --features summaries
 ```
 
 ## Configuration
