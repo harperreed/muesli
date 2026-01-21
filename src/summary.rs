@@ -203,7 +203,7 @@ pub fn get_api_key_from_keychain() -> Result<String> {
     }
 }
 
-pub fn set_api_key_in_keychain(api_key: &str) -> Result<()> {
+pub fn set_api_key_in_keychain(_api_key: &str) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         use keyring::Entry;
@@ -212,7 +212,7 @@ pub fn set_api_key_in_keychain(api_key: &str) -> Result<()> {
             .map_err(|e| Error::Auth(format!("Failed to access keychain: {}", e)))?;
 
         entry
-            .set_password(api_key)
+            .set_password(_api_key)
             .map_err(|e| Error::Auth(format!("Failed to store API key in keychain: {}", e)))?;
 
         println!("✅ OpenAI API key stored in keychain");
