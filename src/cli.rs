@@ -51,7 +51,7 @@ fn parse_throttle_range(s: &str) -> Result<(u64, u64), String> {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// Sync all documents (default)
+    /// Sync all documents
     Sync {
         /// Force reindex of all documents without re-downloading
         #[arg(long)]
@@ -131,20 +131,40 @@ pub enum Commands {
     /// Start MCP (Model Context Protocol) server for AI assistant integration
     #[cfg(feature = "mcp")]
     Mcp,
-}
 
-impl Cli {
-    pub fn command(&self) -> Commands {
-        self.command.clone().unwrap_or(Commands::Sync {
-            #[cfg(feature = "index")]
-            reindex: false,
-        })
-    }
+    /// Show meeting statistics from the local database
+    #[cfg(feature = "storage")]
+    Stats,
+
+    /// Query meetings by attendee, label, or title
+    #[cfg(feature = "storage")]
+    Query {
+        /// Filter by attendee name
+        #[arg(long)]
+        attendee: Option<String>,
+
+        /// Filter by label
+        #[arg(long)]
+        label: Option<String>,
+
+        /// Search by title
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Maximum number of results to return
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
+    },
+
+    /// Launch interactive terminal dashboard
+    #[cfg(feature = "tui")]
+    Tui,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     #[test]
     fn test_parse_throttle_range_valid() {
@@ -157,5 +177,17 @@ mod tests {
         assert!(parse_throttle_range("300:100").is_err());
         assert!(parse_throttle_range("abc:def").is_err());
         assert!(parse_throttle_range("100").is_err());
+    }
+
+    #[test]
+    fn test_no_args_yields_none_command() {
+        let cli = Cli::try_parse_from(["muesli"]).unwrap();
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_sync_subcommand_yields_some() {
+        let cli = Cli::try_parse_from(["muesli", "sync"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Sync { .. })));
     }
 }

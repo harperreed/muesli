@@ -11,9 +11,12 @@ use crate::{
 
 #[cfg(feature = "index")]
 use crate::storage::read_frontmatter;
+#[cfg(not(feature = "storage"))]
 use chrono::{DateTime, Utc};
 use indicatif::{ProgressBar, ProgressStyle};
+#[cfg(not(feature = "storage"))]
 use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "storage"))]
 use std::collections::HashMap;
 
 #[cfg(feature = "index")]
@@ -22,6 +25,7 @@ use crate::index::text;
 #[cfg(feature = "embeddings")]
 use crate::embeddings::{downloader, engine::EmbeddingEngine, vector::VectorStore};
 
+#[cfg(not(feature = "storage"))]
 #[derive(Serialize, Deserialize)]
 struct CacheEntry {
     filename: String,
@@ -29,6 +33,7 @@ struct CacheEntry {
 }
 
 /// Load the sync cache (doc_id -> metadata)
+#[cfg(not(feature = "storage"))]
 fn load_cache(cache_path: &std::path::Path) -> HashMap<String, CacheEntry> {
     if !cache_path.exists() {
         return HashMap::new();
@@ -41,6 +46,7 @@ fn load_cache(cache_path: &std::path::Path) -> HashMap<String, CacheEntry> {
 }
 
 /// Save the sync cache atomically
+#[cfg(not(feature = "storage"))]
 fn save_cache(
     cache_path: &std::path::Path,
     cache: &HashMap<String, CacheEntry>,
@@ -100,11 +106,32 @@ pub fn sync_all(
         (engine, store)
     };
 
+    // Open DuckDB connection and migrate JSON cache if needed (feature-gated)
+    #[cfg(feature = "storage")]
+    let db_conn = {
+        let conn = crate::db::connection::open_or_create(&paths.db_path)?;
+        // One-time migration from JSON cache to DuckDB
+        let json_cache_path = paths.data_dir.join(".sync_cache.json");
+        if json_cache_path.exists() {
+            eprintln!("Migrating sync cache from JSON to DuckDB...");
+            if let Err(e) = crate::db::queries::migrate_from_json_cache(&conn, &json_cache_path) {
+                eprintln!("Warning: Failed to migrate cache: {}", e);
+            } else {
+                let migrated_path = paths.data_dir.join(".sync_cache.json.migrated");
+                let _ = std::fs::rename(&json_cache_path, &migrated_path);
+                eprintln!("Migrated sync cache to DuckDB");
+            }
+        }
+        conn
+    };
+
     println!("Fetching document list...");
     let docs = client.list_documents()?;
 
-    // Load the sync cache (instant)
+    // Load the sync cache
+    #[cfg(not(feature = "storage"))]
     let cache_path = paths.data_dir.join(".sync_cache.json");
+    #[cfg(not(feature = "storage"))]
     let mut cache = load_cache(&cache_path);
 
     let pb = ProgressBar::new(docs.len() as u64);
@@ -123,11 +150,21 @@ pub fn sync_all(
 
     for doc_summary in &docs {
         // Check cache for quick timestamp comparison
+        #[cfg(feature = "storage")]
+        let (should_update, cached_filename) = {
+            match crate::db::queries::get_cache_entry(&db_conn, &doc_summary.id) {
+                Ok(Some(entry)) => {
+                    let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+                    (remote_ts > entry.updated_at, Some(entry.filename))
+                }
+                _ => (true, None),
+            }
+        };
+        #[cfg(not(feature = "storage"))]
         let should_update = if let Some(cache_entry) = cache.get(&doc_summary.id) {
             let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
             remote_ts > cache_entry.updated_at
         } else {
-            // Not in cache - new file
             true
         };
 
@@ -145,12 +182,14 @@ pub fn sync_all(
             continue;
         }
 
-        // Fetch metadata and transcript from API
-        let meta = client.get_metadata(&doc_summary.id)?;
-        let raw = client.get_transcript(&doc_summary.id)?;
+        // Fetch metadata and transcript from API, keeping raw responses
+        let meta_resp = client.get_metadata_with_raw(&doc_summary.id)?;
+        let transcript_resp = client.get_transcript_with_raw(&doc_summary.id)?;
+        let meta = meta_resp.parsed;
+        let transcript = transcript_resp.parsed;
 
         // Convert to markdown
-        let md = to_markdown(&raw, &meta, &doc_summary.id)?;
+        let md = to_markdown(&transcript, &meta, &doc_summary.id)?;
 
         if should_update {
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
@@ -161,7 +200,25 @@ pub fn sync_all(
             let base_filename = format!("{}_{}", date, slug);
             let new_md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
 
-            // If filename changed in cache, remove old file
+            // If filename changed in cache, remove old files
+            #[cfg(feature = "storage")]
+            if let Some(ref old_filename) = cached_filename {
+                if old_filename != &base_filename {
+                    let old_path = paths.transcripts_dir.join(format!("{}.md", old_filename));
+                    if old_path.exists() {
+                        std::fs::remove_file(&old_path)?;
+                    }
+                    for suffix in &["", "_transcript", "_metadata"] {
+                        let old_json = paths
+                            .raw_dir
+                            .join(format!("{}{}.json", old_filename, suffix));
+                        if old_json.exists() {
+                            std::fs::remove_file(&old_json)?;
+                        }
+                    }
+                }
+            }
+            #[cfg(not(feature = "storage"))]
             if let Some(old_entry) = cache.get(&doc_summary.id) {
                 if old_entry.filename != base_filename {
                     let old_path = paths
@@ -170,38 +227,86 @@ pub fn sync_all(
                     if old_path.exists() {
                         std::fs::remove_file(&old_path)?;
                     }
-                    let old_json = paths.raw_dir.join(format!("{}.json", old_entry.filename));
-                    if old_json.exists() {
-                        std::fs::remove_file(&old_json)?;
+                    // Clean up all raw file variants (legacy + new naming)
+                    for suffix in &["", "_transcript", "_metadata"] {
+                        let old_json = paths
+                            .raw_dir
+                            .join(format!("{}{}.json", old_entry.filename, suffix));
+                        if old_json.exists() {
+                            std::fs::remove_file(&old_json)?;
+                        }
                     }
                 }
             }
 
-            // Write files
-            let json_path = paths.raw_dir.join(format!("{}.json", base_filename));
-            let raw_json = serde_json::to_string_pretty(&raw)?;
+            // Write files: save verbatim API responses as raw JSON
+            let transcript_json_path = paths
+                .raw_dir
+                .join(format!("{}_transcript.json", base_filename));
+            let metadata_json_path = paths
+                .raw_dir
+                .join(format!("{}_metadata.json", base_filename));
 
-            write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
+            write_atomic(
+                &transcript_json_path,
+                transcript_resp.raw.as_bytes(),
+                &paths.tmp_dir,
+            )?;
+            write_atomic(
+                &metadata_json_path,
+                meta_resp.raw.as_bytes(),
+                &paths.tmp_dir,
+            )?;
             write_atomic(&new_md_path, full_md.as_bytes(), &paths.tmp_dir)?;
 
+            // Remove legacy single .json file if it exists
+            let legacy_json = paths.raw_dir.join(format!("{}.json", base_filename));
+            if legacy_json.exists() {
+                std::fs::remove_file(&legacy_json)?;
+            }
+
             // Set file modification time to meeting creation date
-            set_file_time(&json_path, &meta.created_at)?;
+            set_file_time(&transcript_json_path, &meta.created_at)?;
+            set_file_time(&metadata_json_path, &meta.created_at)?;
             set_file_time(&new_md_path, &meta.created_at)?;
 
             // Update cache - CRITICAL: store the same timestamp we compare against
             // (doc_summary.updated_at, NOT meta.updated_at - they can differ!)
             let stored_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
-            cache.insert(
-                doc_summary.id.clone(),
-                CacheEntry {
-                    filename: base_filename.clone(),
-                    updated_at: stored_ts,
-                },
-            );
 
-            // Save cache immediately for incremental sync (atomically)
-            // If interrupted, next run will skip already-synced docs
-            save_cache(&cache_path, &cache, &paths.tmp_dir)?;
+            #[cfg(feature = "storage")]
+            {
+                // Store document metadata and update cache in DuckDB
+                if let Err(e) = crate::db::queries::upsert_document(
+                    &db_conn,
+                    &meta,
+                    &doc_summary.id,
+                    &base_filename,
+                ) {
+                    eprintln!(
+                        "Warning: Failed to store document {} in database: {}",
+                        doc_summary.id, e
+                    );
+                }
+                crate::db::queries::upsert_cache_entry(
+                    &db_conn,
+                    &doc_summary.id,
+                    &base_filename,
+                    &stored_ts,
+                )?;
+            }
+
+            #[cfg(not(feature = "storage"))]
+            {
+                cache.insert(
+                    doc_summary.id.clone(),
+                    CacheEntry {
+                        filename: base_filename.clone(),
+                        updated_at: stored_ts,
+                    },
+                );
+                save_cache(&cache_path, &cache, &paths.tmp_dir)?;
+            }
 
             // Index the document (feature-gated, non-fatal)
             #[cfg(feature = "index")]
@@ -448,16 +553,18 @@ pub fn fix_dates(paths: &Paths) -> Result<()> {
         // Set the file time
         match set_file_time(&path, &frontmatter.created_at) {
             Ok(_) => {
-                // Also fix the corresponding JSON file if it exists
+                // Also fix corresponding JSON files if they exist
                 let filename = path.file_stem().unwrap().to_str().unwrap();
-                let json_path = paths.raw_dir.join(format!("{}.json", filename));
-                if json_path.exists() {
-                    if let Err(e) = set_file_time(&json_path, &frontmatter.created_at) {
-                        eprintln!(
-                            "Warning: Failed to set time for {}: {}",
-                            json_path.display(),
-                            e
-                        );
+                for suffix in &["_transcript", "_metadata", ""] {
+                    let json_path = paths.raw_dir.join(format!("{}{}.json", filename, suffix));
+                    if json_path.exists() {
+                        if let Err(e) = set_file_time(&json_path, &frontmatter.created_at) {
+                            eprintln!(
+                                "Warning: Failed to set time for {}: {}",
+                                json_path.display(),
+                                e
+                            );
+                        }
                     }
                 }
                 fixed += 1;

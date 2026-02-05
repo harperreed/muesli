@@ -21,11 +21,16 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command() {
-        muesli::cli::Commands::Sync {
+    match cli.command {
+        None => {
+            use clap::CommandFactory;
+            Cli::command().print_help().expect("Failed to print help");
+            println!();
+        }
+        Some(muesli::cli::Commands::Sync {
             #[cfg(feature = "index")]
             reindex,
-        } => {
+        }) => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
             #[cfg(feature = "index")]
@@ -37,7 +42,7 @@ fn run() -> Result<()> {
                 sync_all(&client, &paths, false)?;
             }
         }
-        muesli::cli::Commands::List => {
+        Some(muesli::cli::Commands::List) => {
             let client = create_client(&cli)?;
             let docs = client.list_documents()?;
 
@@ -47,14 +52,16 @@ fn run() -> Result<()> {
                 println!("{}\t{}\t{}", doc.id, date, title);
             }
         }
-        muesli::cli::Commands::Fetch { id } => {
+        Some(muesli::cli::Commands::Fetch { ref id }) => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
             paths.ensure_dirs()?;
 
-            // Fetch metadata and transcript
-            let meta = client.get_metadata(&id)?;
-            let raw = client.get_transcript(&id)?;
+            // Fetch metadata and transcript, keeping raw responses
+            let meta_resp = client.get_metadata_with_raw(id)?;
+            let transcript_resp = client.get_transcript_with_raw(id)?;
+            let meta = meta_resp.parsed;
+            let transcript = transcript_resp.parsed;
 
             // Compute filename
             let date = meta.created_at.format("%Y-%m-%d").to_string();
@@ -62,31 +69,46 @@ fn run() -> Result<()> {
             let base_filename = format!("{}_{}", date, slug);
 
             // Convert to markdown
-            let md = muesli::convert::to_markdown(&raw, &meta, &id)?;
+            let md = muesli::convert::to_markdown(&transcript, &meta, id)?;
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
-            // Write files
-            let json_path = paths.raw_dir.join(format!("{}.json", base_filename));
+            // Write files: save verbatim API responses as raw JSON
+            let transcript_json_path = paths
+                .raw_dir
+                .join(format!("{}_transcript.json", base_filename));
+            let metadata_json_path = paths
+                .raw_dir
+                .join(format!("{}_metadata.json", base_filename));
             let md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
 
-            let raw_json = serde_json::to_string_pretty(&raw)?;
-            muesli::storage::write_atomic(&json_path, raw_json.as_bytes(), &paths.tmp_dir)?;
+            muesli::storage::write_atomic(
+                &transcript_json_path,
+                transcript_resp.raw.as_bytes(),
+                &paths.tmp_dir,
+            )?;
+            muesli::storage::write_atomic(
+                &metadata_json_path,
+                meta_resp.raw.as_bytes(),
+                &paths.tmp_dir,
+            )?;
             muesli::storage::write_atomic(&md_path, full_md.as_bytes(), &paths.tmp_dir)?;
 
             // Set file modification time to meeting creation date
-            muesli::storage::set_file_time(&json_path, &meta.created_at)?;
+            muesli::storage::set_file_time(&transcript_json_path, &meta.created_at)?;
+            muesli::storage::set_file_time(&metadata_json_path, &meta.created_at)?;
             muesli::storage::set_file_time(&md_path, &meta.created_at)?;
 
-            println!("wrote {}", json_path.display());
+            println!("wrote {}", transcript_json_path.display());
+            println!("wrote {}", metadata_json_path.display());
             println!("wrote {}", md_path.display());
         }
         #[cfg(feature = "index")]
-        muesli::cli::Commands::Search {
+        Some(muesli::cli::Commands::Search {
             query,
             limit,
             #[cfg(feature = "embeddings")]
             semantic,
-        } => {
+        }) => {
             let paths = Paths::new(cli.data_dir)?;
 
             // Check for semantic search
@@ -150,7 +172,7 @@ fn run() -> Result<()> {
                 println!("{}. {} ({})  {}", rank + 1, title, result.date, result.path);
             }
         }
-        muesli::cli::Commands::Open => {
+        Some(muesli::cli::Commands::Open) => {
             let paths = Paths::new(cli.data_dir)?;
             paths.ensure_dirs()?;
 
@@ -161,21 +183,21 @@ fn run() -> Result<()> {
             }
             println!("Opened data directory: {}", paths.data_dir.display());
         }
-        muesli::cli::Commands::FixDates => {
+        Some(muesli::cli::Commands::FixDates) => {
             let paths = Paths::new(cli.data_dir)?;
             fix_dates(&paths)?;
         }
         #[cfg(feature = "summaries")]
-        muesli::cli::Commands::SetApiKey { api_key } => {
+        Some(muesli::cli::Commands::SetApiKey { api_key }) => {
             muesli::summary::set_api_key_in_keychain(&api_key)?;
         }
         #[cfg(feature = "summaries")]
-        muesli::cli::Commands::SetConfig {
+        Some(muesli::cli::Commands::SetConfig {
             model,
             context_window,
             prompt_file,
             show,
-        } => {
+        }) => {
             let paths = Paths::new(cli.data_dir)?;
             let config_path = paths.data_dir.join("summary_config.json");
 
@@ -228,7 +250,7 @@ fn run() -> Result<()> {
             );
         }
         #[cfg(feature = "summaries")]
-        muesli::cli::Commands::Summarize { doc_id, save } => {
+        Some(muesli::cli::Commands::Summarize { doc_id, save }) => {
             let paths = Paths::new(cli.data_dir)?;
 
             // Load config
@@ -289,12 +311,91 @@ fn run() -> Result<()> {
             }
         }
         #[cfg(feature = "mcp")]
-        muesli::cli::Commands::Mcp => {
+        Some(muesli::cli::Commands::Mcp) => {
             // Run MCP server asynchronously
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
             rt.block_on(muesli::mcp::serve_mcp(cli.data_dir))?;
+        }
+        #[cfg(feature = "storage")]
+        Some(muesli::cli::Commands::Stats) => {
+            let paths = Paths::new(cli.data_dir)?;
+            let conn = muesli::db::connection::open_or_create(&paths.db_path)?;
+            let stats = muesli::db::queries::get_stats(&conn)?;
+            let avg_dur = muesli::db::queries::average_duration(&conn)?;
+
+            println!("Meeting Statistics");
+            println!("==================");
+            println!("Total meetings:     {}", stats.total_meetings);
+            println!(
+                "Total duration:     {}h {}m",
+                stats.total_duration_seconds / 3600,
+                (stats.total_duration_seconds % 3600) / 60
+            );
+            println!("Average duration:   {:.0} min", avg_dur);
+            println!("Unique attendees:   {}", stats.unique_attendees);
+            println!("Meetings per week:  {:.1}", stats.meetings_per_week);
+
+            let top = muesli::db::queries::top_attendees(&conn, 10)?;
+            if !top.is_empty() {
+                println!("\nTop Attendees");
+                println!("-------------");
+                for att in &top {
+                    println!("  {:3}x  {}", att.count, att.name);
+                }
+            }
+
+            let labels = muesli::db::queries::label_distribution(&conn)?;
+            if !labels.is_empty() {
+                println!("\nLabels");
+                println!("------");
+                for lbl in &labels {
+                    println!("  {:3}x  {}", lbl.count, lbl.label);
+                }
+            }
+        }
+        #[cfg(feature = "storage")]
+        Some(muesli::cli::Commands::Query {
+            ref attendee,
+            ref label,
+            ref title,
+            limit,
+        }) => {
+            let paths = Paths::new(cli.data_dir)?;
+            let conn = muesli::db::connection::open_or_create(&paths.db_path)?;
+
+            let docs = if let Some(name) = attendee {
+                muesli::db::queries::filter_by_attendee(&conn, name)?
+            } else if let Some(lbl) = label {
+                muesli::db::queries::filter_by_label(&conn, lbl)?
+            } else if let Some(q) = title {
+                muesli::db::queries::search_documents(&conn, q, limit)?
+            } else {
+                muesli::db::queries::list_documents(&conn)?
+            };
+
+            let docs: Vec<_> = docs.into_iter().take(limit).collect();
+
+            if docs.is_empty() {
+                println!("No matching documents found.");
+            } else {
+                for doc in &docs {
+                    let title = doc.title.as_deref().unwrap_or("Untitled");
+                    let date = doc.created_at.format("%Y-%m-%d");
+                    let dur = doc
+                        .duration_seconds
+                        .map(|d| format!("{}m", d / 60))
+                        .unwrap_or_default();
+                    println!("{}\t{}\t{}\t{}", doc.doc_id, date, dur, title);
+                }
+                println!("\n{} result(s)", docs.len());
+            }
+        }
+        #[cfg(feature = "tui")]
+        Some(muesli::cli::Commands::Tui) => {
+            let paths = Paths::new(cli.data_dir)?;
+            muesli::tui::run::run_tui(&paths)?;
         }
     }
 

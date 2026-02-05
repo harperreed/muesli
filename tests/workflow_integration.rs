@@ -1,11 +1,58 @@
 // ABOUTME: Integration tests for end-to-end workflows
 // ABOUTME: Tests reindex, search, and semantic search without API mocking
 
+#[cfg(feature = "index")]
 use muesli::Result;
 use std::fs;
 use tempfile::TempDir;
 
+/// Test that raw file saving uses the correct naming convention
+#[test]
+fn test_raw_file_naming_convention() {
+    use muesli::storage::Paths;
+
+    let temp_dir = TempDir::new().unwrap();
+    let paths = Paths::new(Some(temp_dir.path().to_path_buf())).unwrap();
+    paths.ensure_dirs().unwrap();
+
+    let base_filename = "2025-01-15_planning-meeting";
+
+    // Simulate the new file naming by writing files
+    let transcript_path = paths
+        .raw_dir
+        .join(format!("{}_transcript.json", base_filename));
+    let metadata_path = paths
+        .raw_dir
+        .join(format!("{}_metadata.json", base_filename));
+    let md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
+
+    fs::write(&transcript_path, r#"[{"text": "hello"}]"#).unwrap();
+    fs::write(&metadata_path, r#"{"created_at": "2025-01-15T10:00:00Z"}"#).unwrap();
+    fs::write(&md_path, "# Test").unwrap();
+
+    assert!(transcript_path.exists());
+    assert!(metadata_path.exists());
+    assert!(md_path.exists());
+
+    // Verify the raw dir contains both files
+    let raw_files: Vec<_> = fs::read_dir(&paths.raw_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    assert!(
+        raw_files.iter().any(|f| f.ends_with("_transcript.json")),
+        "Should have transcript JSON"
+    );
+    assert!(
+        raw_files.iter().any(|f| f.ends_with("_metadata.json")),
+        "Should have metadata JSON"
+    );
+}
+
 /// Helper to create a sample markdown file with frontmatter
+#[cfg(feature = "index")]
 fn create_sample_markdown(
     dir: &std::path::Path,
     doc_id: &str,

@@ -16,6 +16,8 @@ pub struct Paths {
     pub index_dir: PathBuf,
     pub models_dir: PathBuf,
     pub tmp_dir: PathBuf,
+    #[cfg(feature = "storage")]
+    pub db_path: PathBuf,
 }
 
 impl Paths {
@@ -45,6 +47,8 @@ impl Paths {
             index_dir: data_dir.join("index").join("tantivy"),
             models_dir: data_dir.join("models"),
             tmp_dir: data_dir.join("tmp"),
+            #[cfg(feature = "storage")]
+            db_path: data_dir.join("muesli.duckdb"),
             data_dir,
         })
     }

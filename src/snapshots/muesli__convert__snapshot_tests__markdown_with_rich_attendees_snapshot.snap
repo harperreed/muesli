@@ -1,0 +1,54 @@
+---
+source: src/convert.rs
+expression: full
+---
+---
+doc_id: doc789
+source: granola
+created_at: 2025-11-01T10:00:00Z
+remote_updated_at: 2025-11-02T08:00:00Z
+title: Q1 Planning
+participants:
+- Alice Smith
+- Bob Jones
+duration_seconds: 1800
+labels:
+- Planning
+creator:
+  name: Alice Smith
+  email: alice@acme.com
+  details:
+    person:
+      name:
+        fullName: Alice Smith
+      employment:
+        title: Engineering Manager
+    company:
+      name: Acme Corp
+attendees:
+- name: Alice Smith
+  email: alice@acme.com
+  details:
+    person:
+      name:
+        fullName: Alice Smith
+      employment:
+        title: Engineering Manager
+    company:
+      name: Acme Corp
+- name: Bob Jones
+  email: bob@acme.com
+generator: muesli 1.0
+---
+
+# Q1 Planning
+
+_Date: 2025-11-01 · Duration: 30m · Participants: Alice Smith, Bob Jones_
+
+## Participants
+
+- **Alice Smith**, Engineering Manager, Acme Corp, (alice@acme.com)
+- **Bob Jones**, (bob@acme.com)
+
+**Alice Smith (10:00:05):** Welcome to the planning session.
+**Bob Jones (10:00:12):** Thanks, let's get started.

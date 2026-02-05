@@ -32,6 +32,10 @@ pub enum Error {
 
     #[error("Embedding error: {0}")]
     Embedding(String),
+
+    #[cfg(feature = "storage")]
+    #[error("Database error: {0}")]
+    Database(String),
 }
 
 impl Error {
@@ -45,7 +49,16 @@ impl Error {
             Error::Summarization(_) => 7,
             Error::Indexing(_) => 8,
             Error::Embedding(_) => 9,
+            #[cfg(feature = "storage")]
+            Error::Database(_) => 10,
         }
+    }
+}
+
+#[cfg(feature = "storage")]
+impl From<duckdb::Error> for Error {
+    fn from(e: duckdb::Error) -> Self {
+        Error::Database(e.to_string())
     }
 }
 

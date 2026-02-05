@@ -7,6 +7,13 @@ use reqwest::blocking::Client;
 use serde_json::json;
 use std::time::Duration;
 
+/// Holds both the raw JSON text and the parsed value from an API response
+#[derive(Debug)]
+pub struct ApiResponse<T> {
+    pub raw: String,
+    pub parsed: T,
+}
+
 fn truncate_str(s: &str, max_chars: usize) -> String {
     if s.len() <= max_chars {
         return s.to_string();
@@ -70,6 +77,15 @@ impl ApiClient {
         endpoint: &str,
         body: serde_json::Value,
     ) -> Result<T> {
+        self.post_with_raw(endpoint, body).map(|r| r.parsed)
+    }
+
+    /// Like post(), but also returns the raw response body text
+    fn post_with_raw<T: serde::de::DeserializeOwned>(
+        &self,
+        endpoint: &str,
+        body: serde_json::Value,
+    ) -> Result<ApiResponse<T>> {
         let url = format!("{}{}", self.base_url, endpoint);
 
         let response = self
@@ -95,16 +111,17 @@ impl ApiClient {
             });
         }
 
-        // Get response text for better error messages
-        let body = response.text()?;
-        serde_json::from_str(&body).map_err(|e| {
+        let raw = response.text()?;
+        let parsed = serde_json::from_str(&raw).map_err(|e| {
             eprintln!("Failed to parse response from {}: {}", endpoint, e);
             eprintln!(
                 "Response body (first 500 chars): {}",
-                truncate_str(&body, 500)
+                truncate_str(&raw, 500)
             );
             Error::Parse(e)
-        })
+        })?;
+
+        Ok(ApiResponse { raw, parsed })
     }
 
     pub fn list_documents(&self) -> Result<Vec<DocumentSummary>> {
@@ -124,8 +141,22 @@ impl ApiClient {
         )
     }
 
+    pub fn get_metadata_with_raw(&self, doc_id: &str) -> Result<ApiResponse<DocumentMetadata>> {
+        self.post_with_raw(
+            "/v1/get-document-metadata",
+            json!({ "document_id": doc_id }),
+        )
+    }
+
     pub fn get_transcript(&self, doc_id: &str) -> Result<RawTranscript> {
         self.post(
+            "/v1/get-document-transcript",
+            json!({ "document_id": doc_id }),
+        )
+    }
+
+    pub fn get_transcript_with_raw(&self, doc_id: &str) -> Result<ApiResponse<RawTranscript>> {
+        self.post_with_raw(
             "/v1/get-document-transcript",
             json!({ "document_id": doc_id }),
         )

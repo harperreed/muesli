@@ -23,10 +23,19 @@ pub mod summary;
 #[cfg(feature = "mcp")]
 pub mod mcp;
 
-pub use api::ApiClient;
+#[cfg(feature = "storage")]
+pub mod db;
+
+#[cfg(feature = "tui")]
+pub mod tui;
+
+pub use api::{ApiClient, ApiResponse};
 pub use auth::resolve_token;
 pub use convert::{to_markdown, MarkdownOutput};
 pub use error::{Error, Result};
-pub use model::{DocumentMetadata, DocumentSummary, Frontmatter, RawTranscript};
+pub use model::{
+    Attendee, CompanyInfo, DocumentMetadata, DocumentSummary, Employment, Frontmatter, LinkedIn,
+    PersonDetails, PersonInfo, PersonName, RawTranscript,
+};
 pub use storage::{read_frontmatter, write_atomic, Paths};
 pub use sync::sync_all;
