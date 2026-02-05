@@ -17,10 +17,8 @@ pub struct EmbeddingEngine {
 
 impl EmbeddingEngine {
     pub fn new(model_path: &Path, tokenizer_path: &Path) -> Result<Self> {
-        // Initialize ort globally (idempotent)
-        ort::init()
-            .commit()
-            .map_err(|e| Error::Embedding(format!("Failed to initialize ort: {}", e)))?;
+        // Initialize ort globally (idempotent, returns false if already initialized)
+        ort::init().commit();
 
         // Load tokenizer
         let tokenizer = Arc::new(

@@ -43,21 +43,31 @@ sudo mv muesli /usr/local/bin/
 # Download muesli-windows-x86_64.exe from releases page
 ```
 
-### From Source
+### From Git (no crate publish needed)
 
 ```bash
 # Install Rust (if needed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Clone and build
+# Install directly from GitHub (all features)
+cargo install --git https://github.com/harperreed/muesli.git --all-features
+
+# Or install with specific features
+cargo install --git https://github.com/harperreed/muesli.git --features index,summaries
+```
+
+### From a Local Clone
+
+```bash
 git clone https://github.com/harperreed/muesli.git
 cd muesli
 
-# Build with all features (recommended)
-cargo build --release --all-features
-
-# Install to PATH
+# Install to PATH with all features
 cargo install --path . --all-features
+
+# Or build without installing
+cargo build --release --all-features
+# Binary is at target/release/muesli
 ```
 
 ## Quick Start

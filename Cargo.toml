@@ -1,6 +1,6 @@
 [package]
 name = "muesli"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.70"
 
@@ -30,7 +30,7 @@ keyring = { version = "2.3", optional = true }
 async-openai = { version = "0.20", optional = true }
 tokio = { version = "1.37", features = ["rt", "macros"], optional = true }
 tantivy = { version = "0.22", optional = true }
-ort = { version = "2.0.0-rc.10", optional = true, default-features = false, features = ["download-binaries"] }
+ort = { version = "2.0.0-rc.11", optional = true, default-features = false, features = ["download-binaries", "tls-native"] }
 tokenizers = { version = "0.19", optional = true }
 rayon = { version = "1.10", optional = true }
 hnsw_rs = { version = "0.3", optional = true }
