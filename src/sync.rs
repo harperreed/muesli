@@ -481,9 +481,10 @@ fn reindex_all(paths: &Paths) -> Result<()> {
         // Read the markdown body
         let content = fs::read_to_string(&path).map_err(crate::Error::Filesystem)?;
 
-        // Extract body after frontmatter (skip YAML block)
+        // Extract body after frontmatter (splitn limits to 3 parts
+        // so body-internal "---" separators are preserved)
         let body = if content.starts_with("---\n") {
-            content.split("---\n").nth(2).unwrap_or(&content)
+            content.splitn(3, "---\n").nth(2).unwrap_or(&content)
         } else {
             &content
         };

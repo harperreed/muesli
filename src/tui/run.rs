@@ -71,6 +71,7 @@ fn run_loop(
     conn: &duckdb::Connection,
 ) -> Result<()> {
     let mut last_selected = app.selected;
+    let mut last_doc_count = app.documents.len();
 
     loop {
         terminal
@@ -100,8 +101,16 @@ fn run_loop(
                         app.selected = 0;
                         load_preview(app, paths);
                         last_selected = app.selected;
+                        last_doc_count = app.documents.len();
                     }
                 }
+            }
+
+            // Refresh preview when document list changes (e.g., attendee filter cleared)
+            if app.documents.len() != last_doc_count {
+                load_preview(app, paths);
+                last_selected = app.selected;
+                last_doc_count = app.documents.len();
             }
 
             // Open in $EDITOR on Enter
@@ -146,10 +155,11 @@ fn load_preview(app: &mut App, paths: &Paths) {
         if let Some(ref fname) = doc.filename {
             let md_path = paths.transcripts_dir.join(format!("{}.md", fname));
             if let Ok(content) = std::fs::read_to_string(&md_path) {
-                // Strip frontmatter for preview
+                // Strip frontmatter for preview (splitn limits to 3 parts
+                // so body-internal "---" separators are preserved)
                 let body = if content.starts_with("---\n") {
                     content
-                        .split("---\n")
+                        .splitn(3, "---\n")
                         .nth(2)
                         .unwrap_or(&content)
                         .to_string()
