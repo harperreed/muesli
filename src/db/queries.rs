@@ -63,6 +63,8 @@ pub fn upsert_document(
     meta: &DocumentMetadata,
     doc_id: &str,
     filename: &str,
+    notes: Option<&str>,
+    summary_text: Option<&str>,
 ) -> Result<()> {
     conn.execute_batch("BEGIN TRANSACTION")?;
 
@@ -72,14 +74,16 @@ pub fn upsert_document(
 
     // Upsert the document row
     conn.execute(
-        "INSERT INTO documents (doc_id, title, created_at, updated_at, duration_seconds, filename, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO documents (doc_id, title, created_at, updated_at, duration_seconds, filename, synced_at, notes, summary_text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (doc_id) DO UPDATE SET
            title = excluded.title,
            updated_at = excluded.updated_at,
            duration_seconds = excluded.duration_seconds,
            filename = excluded.filename,
-           synced_at = excluded.synced_at",
+           synced_at = excluded.synced_at,
+           notes = excluded.notes,
+           summary_text = excluded.summary_text",
         params![
             doc_id,
             meta.title.as_deref(),
@@ -88,6 +92,8 @@ pub fn upsert_document(
             meta.duration_seconds.map(|d| d as i64),
             filename,
             synced_at,
+            notes,
+            summary_text,
         ],
     )?;
 
@@ -485,7 +491,7 @@ mod tests {
     fn test_upsert_document_roundtrip() {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Q4 Planning", &["Alice", "Bob"], &["Planning"]);
-        upsert_document(&conn, &meta, "doc1", "2025-10-28_q4-planning").unwrap();
+        upsert_document(&conn, &meta, "doc1", "2025-10-28_q4-planning", None, None).unwrap();
 
         let docs = list_documents(&conn).unwrap();
         assert_eq!(docs.len(), 1);
@@ -518,8 +524,8 @@ mod tests {
     fn test_upsert_is_idempotent() {
         let conn = open_in_memory().unwrap();
         let meta = make_test_metadata("Standup", &["Alice"], &[]);
-        upsert_document(&conn, &meta, "doc1", "2025-10-28_standup").unwrap();
-        upsert_document(&conn, &meta, "doc1", "2025-10-28_standup").unwrap();
+        upsert_document(&conn, &meta, "doc1", "2025-10-28_standup", None, None).unwrap();
+        upsert_document(&conn, &meta, "doc1", "2025-10-28_standup", None, None).unwrap();
 
         let docs = list_documents(&conn).unwrap();
         assert_eq!(docs.len(), 1);
@@ -551,9 +557,9 @@ mod tests {
         let meta1 = make_test_metadata("Q4 Planning", &[], &[]);
         let meta2 = make_test_metadata("Weekly Standup", &[], &[]);
         let meta3 = make_test_metadata("Design Review", &[], &[]);
-        upsert_document(&conn, &meta1, "doc1", "q4").unwrap();
-        upsert_document(&conn, &meta2, "doc2", "standup").unwrap();
-        upsert_document(&conn, &meta3, "doc3", "design").unwrap();
+        upsert_document(&conn, &meta1, "doc1", "q4", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "standup", None, None).unwrap();
+        upsert_document(&conn, &meta3, "doc3", "design", None, None).unwrap();
 
         let results = search_documents(&conn, "planning", 10).unwrap();
         assert_eq!(results.len(), 1);
@@ -569,8 +575,8 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta1 = make_metadata_with_attendees("Meeting A", &["Alice", "Bob"], &[]);
         let meta2 = make_metadata_with_attendees("Meeting B", &["Charlie"], &[]);
-        upsert_document(&conn, &meta1, "doc1", "a").unwrap();
-        upsert_document(&conn, &meta2, "doc2", "b").unwrap();
+        upsert_document(&conn, &meta1, "doc1", "a", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "b", None, None).unwrap();
 
         let results = filter_by_attendee(&conn, "Alice").unwrap();
         assert_eq!(results.len(), 1);
@@ -586,8 +592,8 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta1 = make_test_metadata("Meeting A", &[], &["Planning", "Q4"]);
         let meta2 = make_test_metadata("Meeting B", &[], &["Review"]);
-        upsert_document(&conn, &meta1, "doc1", "a").unwrap();
-        upsert_document(&conn, &meta2, "doc2", "b").unwrap();
+        upsert_document(&conn, &meta1, "doc1", "a", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "b", None, None).unwrap();
 
         let results = filter_by_label(&conn, "Planning").unwrap();
         assert_eq!(results.len(), 1);
@@ -606,7 +612,7 @@ mod tests {
     fn test_stats() {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
-        upsert_document(&conn, &meta, "doc1", "a").unwrap();
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let stats = get_stats(&conn).unwrap();
         assert_eq!(stats.total_meetings, 1);
@@ -650,7 +656,7 @@ mod tests {
     fn test_delete_document_cleans_up_related() {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Meeting", &["Alice"], &["Tag"]);
-        upsert_document(&conn, &meta, "doc1", "a").unwrap();
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         // Verify data exists
         let att_count: i64 = conn
@@ -692,8 +698,8 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta1 = make_metadata_with_attendees("Meeting A", &["Alice", "Bob"], &[]);
         let meta2 = make_metadata_with_attendees("Meeting B", &["Alice", "Charlie"], &[]);
-        upsert_document(&conn, &meta1, "doc1", "a").unwrap();
-        upsert_document(&conn, &meta2, "doc2", "b").unwrap();
+        upsert_document(&conn, &meta1, "doc1", "a", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "b", None, None).unwrap();
 
         let top = top_attendees(&conn, 10).unwrap();
         assert_eq!(top[0].name, "Alice");
@@ -705,7 +711,7 @@ mod tests {
     fn test_average_duration() {
         let conn = open_in_memory().unwrap();
         let meta = make_test_metadata("Meeting", &[], &[]);
-        upsert_document(&conn, &meta, "doc1", "a").unwrap();
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let avg = average_duration(&conn).unwrap();
         assert_eq!(avg, 60.0); // 3600 seconds = 60 minutes
@@ -716,13 +722,101 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta1 = make_test_metadata("Meeting A", &[], &["Planning", "Q4"]);
         let meta2 = make_test_metadata("Meeting B", &[], &["Planning"]);
-        upsert_document(&conn, &meta1, "doc1", "a").unwrap();
-        upsert_document(&conn, &meta2, "doc2", "b").unwrap();
+        upsert_document(&conn, &meta1, "doc1", "a", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "b", None, None).unwrap();
 
         let dist = label_distribution(&conn).unwrap();
         assert_eq!(dist[0].label, "Planning");
         assert_eq!(dist[0].count, 2);
         assert_eq!(dist[1].label, "Q4");
         assert_eq!(dist[1].count, 1);
+    }
+
+    #[test]
+    fn test_upsert_document_with_notes_and_summary() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_test_metadata("Meeting with Notes", &["Alice"], &[]);
+
+        let notes_md = "## Action Items\n\n- Fix the bug\n- Deploy";
+        let summary = "Discussed bug fixes and deployment plan.";
+        upsert_document(
+            &conn,
+            &meta,
+            "doc1",
+            "meeting-notes",
+            Some(notes_md),
+            Some(summary),
+        )
+        .unwrap();
+
+        // Verify notes and summary_text columns are stored
+        let (stored_notes, stored_summary): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT notes, summary_text FROM documents WHERE doc_id = 'doc1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(stored_notes.as_deref(), Some(notes_md));
+        assert_eq!(stored_summary.as_deref(), Some(summary));
+    }
+
+    #[test]
+    fn test_upsert_document_notes_null_when_none() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_test_metadata("Meeting without Notes", &[], &[]);
+
+        upsert_document(&conn, &meta, "doc1", "no-notes", None, None).unwrap();
+
+        let (stored_notes, stored_summary): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT notes, summary_text FROM documents WHERE doc_id = 'doc1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert!(stored_notes.is_none());
+        assert!(stored_summary.is_none());
+    }
+
+    #[test]
+    fn test_upsert_document_updates_notes_on_conflict() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_test_metadata("Meeting", &[], &[]);
+
+        // First insert with notes
+        upsert_document(
+            &conn,
+            &meta,
+            "doc1",
+            "a",
+            Some("old notes"),
+            Some("old summary"),
+        )
+        .unwrap();
+
+        // Update with different notes
+        upsert_document(
+            &conn,
+            &meta,
+            "doc1",
+            "a",
+            Some("updated notes"),
+            Some("updated summary"),
+        )
+        .unwrap();
+
+        let (stored_notes, stored_summary): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT notes, summary_text FROM documents WHERE doc_id = 'doc1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(stored_notes.as_deref(), Some("updated notes"));
+        assert_eq!(stored_summary.as_deref(), Some("updated summary"));
     }
 }

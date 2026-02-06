@@ -126,7 +126,7 @@ pub fn sync_all(
     };
 
     println!("Fetching document list...");
-    let docs = client.list_documents()?;
+    let docs = client.list_documents_with_notes()?;
 
     // Load the sync cache
     #[cfg(not(feature = "storage"))]
@@ -188,8 +188,33 @@ pub fn sync_all(
         let meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
 
+        // Extract ProseMirror notes from document summary (converted to markdown)
+        let notes_md = doc_summary
+            .last_viewed_panel
+            .as_ref()
+            .map(crate::convert::prosemirror_to_markdown)
+            .filter(|s| !s.is_empty());
+
+        // Fetch summary text from public API (graceful failure)
+        let summary_text = match client.get_public_note(&doc_summary.id) {
+            Ok(public_note) => public_note.summary_text,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to fetch public note for {}: {}",
+                    doc_summary.id, e
+                );
+                None
+            }
+        };
+
         // Convert to markdown
-        let md = to_markdown(&transcript, &meta, &doc_summary.id)?;
+        let md = to_markdown(
+            &transcript,
+            &meta,
+            &doc_summary.id,
+            notes_md.as_deref(),
+            summary_text.as_deref(),
+        )?;
 
         if should_update {
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
@@ -282,6 +307,8 @@ pub fn sync_all(
                     &meta,
                     &doc_summary.id,
                     &base_filename,
+                    notes_md.as_deref(),
+                    summary_text.as_deref(),
                 ) {
                     eprintln!(
                         "Warning: Failed to store document {} in database: {}",

@@ -68,8 +68,8 @@ fn run() -> Result<()> {
             let slug = muesli::util::slugify(meta.title.as_deref().unwrap_or("untitled"));
             let base_filename = format!("{}_{}", date, slug);
 
-            // Convert to markdown
-            let md = muesli::convert::to_markdown(&transcript, &meta, id)?;
+            // Convert to markdown (notes/summary fetched only during sync)
+            let md = muesli::convert::to_markdown(&transcript, &meta, id, None, None)?;
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
             // Write files: save verbatim API responses as raw JSON

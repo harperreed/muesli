@@ -17,7 +17,9 @@ pub fn initialize(conn: &Connection) -> Result<()> {
             duration_seconds BIGINT,
             source VARCHAR DEFAULT 'granola',
             filename VARCHAR,
-            synced_at VARCHAR
+            synced_at VARCHAR,
+            notes VARCHAR,
+            summary_text VARCHAR
         );
 
         CREATE SEQUENCE IF NOT EXISTS attendees_id_seq;

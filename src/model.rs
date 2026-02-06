@@ -405,6 +405,8 @@ pub struct Frontmatter {
     pub creator: Option<Attendee>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attendees: Option<Vec<Attendee>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_text: Option<String>,
     pub generator: String,
 }
 
@@ -425,6 +427,7 @@ mod frontmatter_tests {
             labels: vec!["Planning".into()],
             creator: None,
             attendees: None,
+            summary_text: None,
             generator: "muesli 1.0".into(),
         };
 
@@ -434,9 +437,11 @@ mod frontmatter_tests {
         assert_eq!(parsed.participants.len(), 2);
         assert!(parsed.creator.is_none());
         assert!(parsed.attendees.is_none());
-        // Verify skip_serializing_if works - no creator/attendees in YAML
+        assert!(parsed.summary_text.is_none());
+        // Verify skip_serializing_if works - no creator/attendees/summary_text in YAML
         assert!(!yaml.contains("creator"));
         assert!(!yaml.contains("attendees"));
+        assert!(!yaml.contains("summary_text"));
     }
 
     #[test]
@@ -460,6 +465,7 @@ mod frontmatter_tests {
                 email: Some("alice@acme.com".into()),
                 details: None,
             }]),
+            summary_text: None,
             generator: "muesli 1.0".into(),
         };
 

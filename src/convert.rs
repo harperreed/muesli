@@ -42,6 +42,8 @@ pub fn to_markdown(
     raw: &RawTranscript,
     meta: &DocumentMetadata,
     doc_id: &str,
+    notes: Option<&str>,
+    summary_text: Option<&str>,
 ) -> Result<MarkdownOutput> {
     // Build frontmatter
     let frontmatter = Frontmatter {
@@ -55,6 +57,7 @@ pub fn to_markdown(
         labels: meta.labels.clone(),
         creator: meta.creator.clone(),
         attendees: meta.attendees.clone(),
+        summary_text: summary_text.map(|s| s.to_string()),
         generator: "muesli 1.0".into(),
     };
 
@@ -95,6 +98,27 @@ pub fn to_markdown(
             body.push('\n');
         }
     }
+
+    // AI-generated summary section
+    if let Some(summary) = summary_text {
+        if !summary.is_empty() {
+            body.push_str("## Summary\n\n");
+            body.push_str(summary);
+            body.push_str("\n\n");
+        }
+    }
+
+    // User ProseMirror notes section (already converted to markdown)
+    if let Some(notes_md) = notes {
+        if !notes_md.is_empty() {
+            body.push_str("## Notes\n\n");
+            body.push_str(notes_md);
+            body.push_str("\n\n");
+        }
+    }
+
+    // Separator before transcript
+    body.push_str("---\n\n");
 
     // Transcript content
     if raw.entries.is_empty() {
@@ -162,7 +186,7 @@ mod tests {
             attendees: None,
         };
 
-        let output = to_markdown(&raw, &meta, "doc123").unwrap();
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
 
         assert!(output.body.contains("# Test Meeting"));
         assert!(output.body.contains("**Alice"));
@@ -243,7 +267,7 @@ mod tests {
             ]),
         };
 
-        let output = to_markdown(&raw, &meta, "doc123").unwrap();
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
 
         assert!(output.body.contains("## Participants"));
         assert!(output
@@ -282,7 +306,7 @@ mod tests {
             attendees: None,
         };
 
-        let output = to_markdown(&raw, &meta, "doc123").unwrap();
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
         assert!(!output.body.contains("## Participants"));
     }
 
@@ -317,7 +341,7 @@ mod tests {
             }]),
         };
 
-        let output = to_markdown(&raw, &meta, "doc123").unwrap();
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
         // Attendees exist but none have names, so section should be suppressed
         assert!(!output.body.contains("## Participants"));
     }
@@ -338,10 +362,165 @@ mod tests {
             attendees: None,
         };
 
-        let output = to_markdown(&raw, &meta, "doc123").unwrap();
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
 
         assert!(output.body.contains("# Untitled Meeting"));
         assert!(output.body.contains("_No transcript content available._"));
+    }
+
+    #[test]
+    fn test_to_markdown_with_summary_and_notes() {
+        let raw = RawTranscript {
+            entries: vec![TranscriptEntry {
+                document_id: Some("doc123".into()),
+                speaker: Some("Alice".into()),
+                start: Some("2025-10-01T21:35:12.500Z".into()),
+                end: None,
+                text: "Hello".into(),
+                source: None,
+                id: None,
+                is_final: None,
+            }],
+        };
+
+        let meta = DocumentMetadata {
+            id: Some("doc123".into()),
+            title: Some("Meeting".into()),
+            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            updated_at: None,
+            participants: vec!["Alice".into()],
+            duration_seconds: None,
+            labels: vec![],
+            creator: None,
+            attendees: None,
+        };
+
+        let output = to_markdown(
+            &raw,
+            &meta,
+            "doc123",
+            Some("- Action item 1\n- Action item 2"),
+            Some("We discussed project priorities."),
+        )
+        .unwrap();
+
+        // Summary section should appear before Notes
+        assert!(output
+            .body
+            .contains("## Summary\n\nWe discussed project priorities."));
+        assert!(output
+            .body
+            .contains("## Notes\n\n- Action item 1\n- Action item 2"));
+        // Separator should appear before transcript
+        assert!(output.body.contains("---\n"));
+        // Summary should come before Notes
+        let summary_pos = output.body.find("## Summary").unwrap();
+        let notes_pos = output.body.find("## Notes").unwrap();
+        let separator_pos = output.body.find("---\n").unwrap();
+        assert!(summary_pos < notes_pos);
+        assert!(notes_pos < separator_pos);
+        // Frontmatter should contain summary_text
+        assert!(output.frontmatter_yaml.contains("summary_text"));
+    }
+
+    #[test]
+    fn test_to_markdown_summary_only_no_notes() {
+        let raw = RawTranscript {
+            entries: vec![TranscriptEntry {
+                document_id: None,
+                speaker: Some("Alice".into()),
+                start: None,
+                end: None,
+                text: "Hello".into(),
+                source: None,
+                id: None,
+                is_final: None,
+            }],
+        };
+
+        let meta = DocumentMetadata {
+            id: Some("doc123".into()),
+            title: Some("Meeting".into()),
+            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            updated_at: None,
+            participants: vec![],
+            duration_seconds: None,
+            labels: vec![],
+            creator: None,
+            attendees: None,
+        };
+
+        let output = to_markdown(&raw, &meta, "doc123", None, Some("AI summary here.")).unwrap();
+
+        assert!(output.body.contains("## Summary\n\nAI summary here."));
+        assert!(!output.body.contains("## Notes"));
+        assert!(output.body.contains("---\n"));
+    }
+
+    #[test]
+    fn test_to_markdown_notes_only_no_summary() {
+        let raw = RawTranscript {
+            entries: vec![TranscriptEntry {
+                document_id: None,
+                speaker: Some("Alice".into()),
+                start: None,
+                end: None,
+                text: "Hello".into(),
+                source: None,
+                id: None,
+                is_final: None,
+            }],
+        };
+
+        let meta = DocumentMetadata {
+            id: Some("doc123".into()),
+            title: Some("Meeting".into()),
+            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            updated_at: None,
+            participants: vec![],
+            duration_seconds: None,
+            labels: vec![],
+            creator: None,
+            attendees: None,
+        };
+
+        let output = to_markdown(&raw, &meta, "doc123", Some("User notes here"), None).unwrap();
+
+        assert!(!output.body.contains("## Summary"));
+        assert!(output.body.contains("## Notes\n\nUser notes here"));
+        assert!(output.body.contains("---\n"));
+    }
+
+    #[test]
+    fn test_to_markdown_separator_always_present() {
+        let raw = RawTranscript {
+            entries: vec![TranscriptEntry {
+                document_id: None,
+                speaker: Some("Alice".into()),
+                start: None,
+                end: None,
+                text: "Hello".into(),
+                source: None,
+                id: None,
+                is_final: None,
+            }],
+        };
+
+        let meta = DocumentMetadata {
+            id: Some("doc123".into()),
+            title: Some("Meeting".into()),
+            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            updated_at: None,
+            participants: vec![],
+            duration_seconds: None,
+            labels: vec![],
+            creator: None,
+            attendees: None,
+        };
+
+        // Even with no notes or summary, separator should be present
+        let output = to_markdown(&raw, &meta, "doc123", None, None).unwrap();
+        assert!(output.body.contains("---\n"));
     }
 }
 
@@ -389,7 +568,7 @@ mod snapshot_tests {
             attendees: None,
         };
 
-        let output = to_markdown(&raw, &meta, "doc456").unwrap();
+        let output = to_markdown(&raw, &meta, "doc456", None, None).unwrap();
         let full = format!("---\n{}---\n\n{}", output.frontmatter_yaml, output.body);
 
         insta::assert_snapshot!(full);
@@ -479,7 +658,7 @@ mod snapshot_tests {
             ]),
         };
 
-        let output = to_markdown(&raw, &meta, "doc789").unwrap();
+        let output = to_markdown(&raw, &meta, "doc789", None, None).unwrap();
         let full = format!("---\n{}---\n\n{}", output.frontmatter_yaml, output.body);
 
         insta::assert_snapshot!(full);
