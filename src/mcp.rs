@@ -888,17 +888,11 @@ pub async fn serve_mcp(data_dir: Option<std::path::PathBuf>) -> crate::Result<()
 
     let service = MuesliMcpService::new(data_dir)?;
     let server = service.serve(stdio()).await.map_err(|e| {
-        crate::Error::Filesystem(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("MCP server failed: {}", e),
-        ))
+        crate::Error::Filesystem(std::io::Error::other(format!("MCP server failed: {}", e)))
     })?;
 
     server.waiting().await.map_err(|e| {
-        crate::Error::Filesystem(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("MCP server error: {}", e),
-        ))
+        crate::Error::Filesystem(std::io::Error::other(format!("MCP server error: {}", e)))
     })?;
 
     Ok(())

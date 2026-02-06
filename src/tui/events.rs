@@ -3,7 +3,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::app::{App, Mode};
+use super::app::{App, FocusedPane, Mode};
 
 /// Handle a key event and update app state accordingly.
 pub fn handle_key_event(app: &mut App, key: KeyEvent) {
@@ -22,12 +22,17 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true;
         }
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.select_next();
+        KeyCode::Tab => {
+            app.toggle_focus();
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.select_prev();
-        }
+        KeyCode::Char('j') | KeyCode::Down => match app.focused_pane {
+            FocusedPane::MeetingList => app.select_next(),
+            FocusedPane::Preview => app.scroll_preview_down(),
+        },
+        KeyCode::Char('k') | KeyCode::Up => match app.focused_pane {
+            FocusedPane::MeetingList => app.select_prev(),
+            FocusedPane::Preview => app.scroll_preview_up(),
+        },
         KeyCode::Char('/') => {
             app.mode = Mode::Search;
         }
@@ -283,5 +288,43 @@ mod tests {
         assert_eq!(app.attendee_selected, 1);
         handle_key_event(&mut app, key(KeyCode::Up));
         assert_eq!(app.attendee_selected, 0);
+    }
+
+    #[test]
+    fn test_tab_toggles_focus() {
+        let mut app = make_app();
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+
+        handle_key_event(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.focused_pane, FocusedPane::Preview);
+
+        handle_key_event(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+    }
+
+    #[test]
+    fn test_j_k_scrolls_preview_when_focused() {
+        let mut app = make_app();
+        app.focused_pane = FocusedPane::Preview;
+
+        handle_key_event(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.preview_scroll, 1);
+
+        handle_key_event(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.preview_scroll, 2);
+
+        handle_key_event(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.preview_scroll, 1);
+    }
+
+    #[test]
+    fn test_j_k_navigates_list_when_list_focused() {
+        let mut app = make_app();
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+        assert_eq!(app.selected, 0);
+
+        handle_key_event(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.selected, 1);
+        assert_eq!(app.preview_scroll, 0); // scroll should not change
     }
 }

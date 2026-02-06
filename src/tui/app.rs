@@ -11,6 +11,13 @@ pub enum Mode {
     AttendeeFilter,
 }
 
+/// Which pane currently has keyboard focus.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FocusedPane {
+    MeetingList,
+    Preview,
+}
+
 /// Application state for the TUI dashboard.
 pub struct App {
     pub documents: Vec<DocumentRow>,
@@ -29,6 +36,10 @@ pub struct App {
     pub active_attendee_filter: Option<String>,
     /// Flag set when attendee filter was just applied, so run loop can re-query DB.
     pub attendee_filter_changed: bool,
+    /// Which pane has keyboard focus (Tab switches between them).
+    pub focused_pane: FocusedPane,
+    /// Vertical scroll offset for the preview pane.
+    pub preview_scroll: u16,
 }
 
 impl App {
@@ -52,6 +63,8 @@ impl App {
             attendee_selected: 0,
             active_attendee_filter: None,
             attendee_filter_changed: false,
+            focused_pane: FocusedPane::MeetingList,
+            preview_scroll: 0,
         }
     }
 
@@ -161,6 +174,29 @@ impl App {
         if !self.attendee_filtered.is_empty() {
             self.attendee_selected = (self.attendee_selected + 1) % self.attendee_filtered.len();
         }
+    }
+
+    /// Toggle keyboard focus between meeting list and preview pane.
+    pub fn toggle_focus(&mut self) {
+        self.focused_pane = match self.focused_pane {
+            FocusedPane::MeetingList => FocusedPane::Preview,
+            FocusedPane::Preview => FocusedPane::MeetingList,
+        };
+    }
+
+    /// Scroll the preview pane down by one line.
+    pub fn scroll_preview_down(&mut self) {
+        self.preview_scroll = self.preview_scroll.saturating_add(1);
+    }
+
+    /// Scroll the preview pane up by one line.
+    pub fn scroll_preview_up(&mut self) {
+        self.preview_scroll = self.preview_scroll.saturating_sub(1);
+    }
+
+    /// Reset preview scroll to the top (called when selection changes).
+    pub fn reset_preview_scroll(&mut self) {
+        self.preview_scroll = 0;
     }
 
     /// Move selection to the previous attendee in the filtered list.
@@ -374,5 +410,49 @@ mod tests {
         app.attendee_select_next(); // should not panic
         app.attendee_select_prev(); // should not panic
         assert_eq!(app.attendee_selected, 0);
+    }
+
+    #[test]
+    fn test_default_focus_is_meeting_list() {
+        let app = App::new(vec![], None, vec![]);
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+    }
+
+    #[test]
+    fn test_toggle_focus() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+
+        app.toggle_focus();
+        assert_eq!(app.focused_pane, FocusedPane::Preview);
+
+        app.toggle_focus();
+        assert_eq!(app.focused_pane, FocusedPane::MeetingList);
+    }
+
+    #[test]
+    fn test_preview_scroll() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert_eq!(app.preview_scroll, 0);
+
+        app.scroll_preview_down();
+        app.scroll_preview_down();
+        assert_eq!(app.preview_scroll, 2);
+
+        app.scroll_preview_up();
+        assert_eq!(app.preview_scroll, 1);
+
+        // Should not underflow
+        app.scroll_preview_up();
+        app.scroll_preview_up();
+        assert_eq!(app.preview_scroll, 0);
+    }
+
+    #[test]
+    fn test_reset_preview_scroll() {
+        let mut app = App::new(vec![], None, vec![]);
+        app.preview_scroll = 42;
+        app.reset_preview_scroll();
+        assert_eq!(app.preview_scroll, 0);
     }
 }

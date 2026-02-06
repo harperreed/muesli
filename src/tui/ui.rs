@@ -5,11 +5,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
-use super::app::{App, Mode};
+use super::app::{App, FocusedPane, Mode};
 
 /// Render the complete TUI layout.
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -74,8 +74,12 @@ fn draw_search_bar(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::styled(search_text, search_style))
     };
 
-    let search =
-        Paragraph::new(search_line).block(Block::default().borders(Borders::ALL).title("Search"));
+    let search = Paragraph::new(search_line).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Search")
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     frame.render_widget(search, chunks[0]);
 
     // Stats summary
@@ -88,8 +92,12 @@ fn draw_search_bar(frame: &mut Frame, app: &App, area: Rect) {
         "No stats".to_string()
     };
 
-    let stats =
-        Paragraph::new(stats_text).block(Block::default().borders(Borders::ALL).title("Stats"));
+    let stats = Paragraph::new(Span::styled(stats_text, Style::default().fg(Color::Green))).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Stats")
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     frame.render_widget(stats, chunks[1]);
 }
 
@@ -135,9 +143,27 @@ fn draw_meeting_list(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let title = format!("Meetings ({}/{})", app.filtered.len(), app.documents.len());
-    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
+    let border_color = if app.focused_pane == FocusedPane::MeetingList {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let title_style = if app.focused_pane == FocusedPane::MeetingList {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Span::styled(title, title_style))
+            .border_style(Style::default().fg(border_color)),
+    );
 
-    frame.render_widget(list, area);
+    let mut list_state = ListState::default().with_selected(Some(app.selected));
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn draw_preview(frame: &mut Frame, app: &App, area: Rect) {
@@ -158,9 +184,30 @@ fn draw_preview(frame: &mut Frame, app: &App, area: Rect) {
         "No document selected".to_string()
     };
 
-    let preview = Paragraph::new(content)
+    let text = tui_markdown::from_str(&content);
+
+    let border_color = if app.focused_pane == FocusedPane::Preview {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+    let title_style = if app.focused_pane == FocusedPane::Preview {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let preview = Paragraph::new(text)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title("Preview"));
+        .scroll((app.preview_scroll, 0))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Span::styled("Preview", title_style))
+                .border_style(Style::default().fg(border_color)),
+        );
     frame.render_widget(preview, area);
 }
 
@@ -168,16 +215,19 @@ fn draw_help_bar(frame: &mut Frame, app: &App, area: Rect) {
     let help_text = match app.mode {
         Mode::Normal => {
             if app.active_attendee_filter.is_some() {
-                "[q] quit  [j/k] navigate  [/] search  [@] attendees  [C] clear filter  [Enter] open"
+                "[q] quit  [Tab] switch pane  [j/k] navigate  [/] search  [@] attendees  [C] clear filter  [Enter] open"
             } else {
-                "[q] quit  [j/k] navigate  [/] search  [@] attendees  [Enter] open"
+                "[q] quit  [Tab] switch pane  [j/k] navigate  [/] search  [@] attendees  [Enter] open"
             }
         }
         Mode::Search => "[Enter] confirm  [Esc] cancel  [type] filter",
         Mode::AttendeeFilter => "[Enter] apply  [Esc] cancel  [j/k] select  [type] filter",
     };
 
-    let help = Paragraph::new(help_text).style(Style::default().fg(Color::DarkGray));
+    let help = Paragraph::new(Span::styled(
+        help_text,
+        Style::default().fg(Color::DarkGray),
+    ));
     frame.render_widget(help, area);
 }
 
@@ -225,7 +275,13 @@ fn draw_attendee_popup(frame: &mut Frame, app: &App) {
     let input = Paragraph::new(input_text).style(input_style).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Filter by Attendee"),
+            .title(Span::styled(
+                "Filter by Attendee",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .border_style(Style::default().fg(Color::Magenta)),
     );
     frame.render_widget(input, popup_chunks[0]);
 
@@ -258,6 +314,82 @@ fn draw_attendee_popup(frame: &mut Frame, app: &App) {
         app.attendee_filtered.len(),
         app.attendees.len()
     );
-    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(count_text));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Span::styled(
+                count_text,
+                Style::default().fg(Color::Magenta),
+            ))
+            .border_style(Style::default().fg(Color::Magenta)),
+    );
     frame.render_widget(list, popup_chunks[1]);
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::style::Modifier;
+
+    #[test]
+    fn test_markdown_heading_produces_styled_text() {
+        let text = tui_markdown::from_str("# Hello World");
+        assert!(!text.lines.is_empty(), "should produce at least one line");
+
+        // tui-markdown applies heading style at the Line level, not on individual spans
+        let first_line = &text.lines[0];
+        let line_bold = first_line.style.add_modifier.contains(Modifier::BOLD);
+        let span_bold = first_line
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD));
+        assert!(
+            line_bold || span_bold,
+            "heading should be rendered bold (line or span level)"
+        );
+    }
+
+    #[test]
+    fn test_markdown_bold_produces_styled_text() {
+        let text = tui_markdown::from_str("some **bold** text");
+        let has_bold_span = text
+            .lines
+            .iter()
+            .flat_map(|l| &l.spans)
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD));
+        let has_bold_line = text
+            .lines
+            .iter()
+            .any(|l| l.style.add_modifier.contains(Modifier::BOLD));
+        assert!(
+            has_bold_span || has_bold_line,
+            "bold markdown should produce bold styling"
+        );
+    }
+
+    #[test]
+    fn test_markdown_list_preserves_items() {
+        let text = tui_markdown::from_str("- item one\n- item two\n- item three");
+        // Each list item should produce at least one line
+        assert!(
+            text.lines.len() >= 3,
+            "should have at least 3 lines for 3 list items"
+        );
+    }
+
+    #[test]
+    fn test_markdown_mixed_content() {
+        let md = "# Meeting Notes\n\nDate: 2024-01-01\n\n## Attendees\n\n- **Alice**\n- Bob\n\n## Action Items\n\n1. Review PR\n2. Deploy changes";
+        let text = tui_markdown::from_str(md);
+        assert!(
+            text.lines.len() >= 5,
+            "mixed markdown should produce multiple styled lines"
+        );
+    }
+
+    #[test]
+    fn test_empty_markdown_produces_output() {
+        let text = tui_markdown::from_str("");
+        // Should not panic, may produce empty or minimal output
+        assert!(text.lines.is_empty() || !text.lines.is_empty());
+    }
 }

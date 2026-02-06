@@ -32,14 +32,13 @@ pub fn run_tui(paths: &Paths) -> Result<()> {
     load_preview(&mut app, paths);
 
     // Setup terminal
-    enable_raw_mode()
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+    enable_raw_mode().map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+        .map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+    let mut terminal =
+        Terminal::new(backend).map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
 
     // Install panic hook to restore terminal on crash
     let original_hook = std::panic::take_hook();
@@ -53,13 +52,12 @@ pub fn run_tui(paths: &Paths) -> Result<()> {
     let result = run_loop(&mut terminal, &mut app, paths, &conn);
 
     // Restore terminal
-    disable_raw_mode()
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+    disable_raw_mode().map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+        .map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
     terminal
         .show_cursor()
-        .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+        .map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
 
     result
 }
@@ -76,10 +74,10 @@ fn run_loop(
     loop {
         terminal
             .draw(|frame| ui::draw(frame, app))
-            .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?;
+            .map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
 
-        if let Event::Key(key) = event::read()
-            .map_err(|e| crate::Error::Filesystem(io::Error::new(io::ErrorKind::Other, e)))?
+        if let Event::Key(key) =
+            event::read().map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?
         {
             let was_enter = key.code == crossterm::event::KeyCode::Enter
                 && app.mode == super::app::Mode::Normal;
@@ -140,6 +138,7 @@ fn run_loop(
             // Update preview when selection changes
             if app.selected != last_selected {
                 load_preview(app, paths);
+                app.reset_preview_scroll();
                 last_selected = app.selected;
             }
         }

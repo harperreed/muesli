@@ -106,10 +106,10 @@ pub fn set_file_time(path: &Path, datetime: &DateTime<Utc>) -> Result<()> {
     let timestamp = datetime.timestamp();
     let filetime = FileTime::from_unix_time(timestamp, 0);
     filetime::set_file_mtime(path, filetime).map_err(|e| {
-        Error::Filesystem(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to set file time: {}", e),
-        ))
+        Error::Filesystem(std::io::Error::other(format!(
+            "Failed to set file time: {}",
+            e
+        )))
     })
 }
 

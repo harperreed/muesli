@@ -53,14 +53,11 @@ fn download_file(url: &str, dest: &Path, display_name: &str) -> Result<()> {
     let response = client.get(url).send()?;
 
     if !response.status().is_success() {
-        return Err(Error::Filesystem(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Failed to download {}: HTTP {}",
-                display_name,
-                response.status()
-            ),
-        )));
+        return Err(Error::Filesystem(std::io::Error::other(format!(
+            "Failed to download {}: HTTP {}",
+            display_name,
+            response.status()
+        ))));
     }
 
     let total_size = response.content_length().unwrap_or(0);
