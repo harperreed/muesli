@@ -1,5 +1,8 @@
+// ABOUTME: Integration tests for the Granola API client layer
+// ABOUTME: Uses wiremock to verify HTTP request/response handling for documents, notes, and metadata
+
 use muesli::api::ApiClient;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -171,4 +174,147 @@ async fn test_get_transcript_with_raw() {
     // Raw preserves unknown fields
     assert!(api_resp.raw.contains("extra_field_from_api"));
     assert!(api_resp.raw.contains("42"));
+}
+
+/// Test A: list_documents_with_notes returns ProseMirror data in last_viewed_panel
+#[tokio::test]
+async fn test_list_documents_with_notes_returns_prosemirror() {
+    let mock_server = MockServer::start().await;
+
+    let response = serde_json::json!({
+        "docs": [
+            {
+                "id": "doc-notes-1",
+                "title": "Meeting with Notes",
+                "created_at": "2025-11-01T10:00:00Z",
+                "last_viewed_panel": {
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "heading",
+                            "attrs": {"level": 2},
+                            "content": [
+                                {"type": "text", "text": "Action Items"}
+                            ]
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "text", "text": "Follow up on "},
+                                {"type": "text", "text": "deployment", "marks": [{"type": "bold"}]}
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/v2/get-documents"))
+        .and(header("Authorization", "Bearer test_token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response))
+        .mount(&mock_server)
+        .await;
+
+    let uri = mock_server.uri();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let client = ApiClient::new("test_token".into(), Some(uri))
+            .unwrap()
+            .disable_throttle();
+        client.list_documents_with_notes()
+    })
+    .await
+    .unwrap();
+
+    let docs = result.unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].id, "doc-notes-1");
+
+    // Verify ProseMirror data is populated
+    let panel = docs[0]
+        .last_viewed_panel
+        .as_ref()
+        .expect("last_viewed_panel should be populated");
+    assert_eq!(panel.node_type, "doc");
+
+    let content = panel.content.as_ref().unwrap();
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0].node_type, "heading");
+    assert_eq!(content[1].node_type, "paragraph");
+
+    // Verify the text content is accessible
+    let heading_text = content[0].content.as_ref().unwrap();
+    assert_eq!(heading_text[0].text.as_deref(), Some("Action Items"));
+}
+
+/// Test B: PublicNote model parsing (since get_public_note uses hardcoded URL)
+#[test]
+fn test_public_note_model_parsing_with_summary() {
+    let json = r#"{
+        "id": "note-integration-test",
+        "title": "Sprint Retrospective",
+        "summary_text": "Team discussed velocity improvements and identified three key blockers.",
+        "participants": ["Alice", "Bob"],
+        "unknown_future_field": {"nested": true}
+    }"#;
+
+    let note: muesli::PublicNote = serde_json::from_str(json).unwrap();
+    assert_eq!(note.id, "note-integration-test");
+    assert_eq!(note.title.as_deref(), Some("Sprint Retrospective"));
+    assert_eq!(
+        note.summary_text.as_deref(),
+        Some("Team discussed velocity improvements and identified three key blockers.")
+    );
+}
+
+/// Test B (continued): PublicNote with null summary
+#[test]
+fn test_public_note_model_parsing_without_summary() {
+    let json = r#"{"id": "note-no-summary", "title": "Quick Sync"}"#;
+
+    let note: muesli::PublicNote = serde_json::from_str(json).unwrap();
+    assert_eq!(note.id, "note-no-summary");
+    assert_eq!(note.title.as_deref(), Some("Quick Sync"));
+    assert!(note.summary_text.is_none());
+}
+
+/// Test C: list_documents_with_notes sends include_last_viewed_panel in request body
+#[tokio::test]
+async fn test_list_documents_with_notes_sends_correct_body() {
+    let mock_server = MockServer::start().await;
+
+    let response = serde_json::json!({
+        "docs": []
+    });
+
+    // Use body_partial_json to verify the request body includes include_last_viewed_panel: true
+    Mock::given(method("POST"))
+        .and(path("/v2/get-documents"))
+        .and(header("Authorization", "Bearer test_token"))
+        .and(body_partial_json(
+            serde_json::json!({"include_last_viewed_panel": true}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let uri = mock_server.uri();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let client = ApiClient::new("test_token".into(), Some(uri))
+            .unwrap()
+            .disable_throttle();
+        client.list_documents_with_notes()
+    })
+    .await
+    .unwrap();
+
+    let docs = result.unwrap();
+    assert!(docs.is_empty());
+    // The mock's expect(1) will verify the request was received with the correct body.
+    // If the body didn't match, the mock wouldn't have been triggered and the request
+    // would have gotten a 404.
 }
