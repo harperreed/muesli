@@ -92,9 +92,10 @@ impl ApiClient {
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
+            .header("Accept", "*/*")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "muesli/1.0 (Rust)")
+            .header("User-Agent", "Granola/5.354.0")
+            .header("X-Client-Version", "5.354.0")
             .json(&body)
             .send()?;
 
@@ -205,21 +206,39 @@ impl ApiClient {
         self.get(&url)
     }
 
-    /// List documents with panels (user notes + AI-enhanced notes)
+    /// List documents with panels (user notes + AI-enhanced notes).
+    /// Paginates through all results in batches.
     pub fn list_documents_with_notes(&self) -> Result<Vec<DocumentSummary>> {
         #[derive(serde::Deserialize)]
         struct Response {
             docs: Vec<DocumentSummary>,
         }
 
-        let resp: Response = self.post(
-            "/v2/get-documents",
-            json!({
-                "include_last_viewed_panel": true,
-                "include_panels": true
-            }),
-        )?;
-        Ok(resp.docs)
+        let batch_size = 100;
+        let mut all_docs = Vec::new();
+        let mut offset = 0;
+
+        loop {
+            let resp: Response = self.post(
+                "/v2/get-documents",
+                json!({
+                    "limit": batch_size,
+                    "offset": offset,
+                    "include_last_viewed_panel": true,
+                    "include_panels": true
+                }),
+            )?;
+
+            let count = resp.docs.len();
+            all_docs.extend(resp.docs);
+
+            if count < batch_size {
+                break;
+            }
+            offset += batch_size;
+        }
+
+        Ok(all_docs)
     }
 }
 

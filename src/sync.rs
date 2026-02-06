@@ -132,6 +132,16 @@ pub fn sync_all(
     println!("Fetching document list...");
     let docs = client.list_documents_with_notes()?;
 
+    // Diagnostic: count notes availability
+    let with_enhanced = docs.iter().filter(|d| d.enhanced_notes().is_some()).count();
+    let with_user = docs.iter().filter(|d| d.user_notes().is_some()).count();
+    println!(
+        "Notes: {} with AI summary, {} with user notes (of {} total)",
+        with_enhanced,
+        with_user,
+        docs.len(),
+    );
+
     // Load the sync cache
     #[cfg(not(feature = "storage"))]
     let cache_path = paths.data_dir.join(".sync_cache.json");

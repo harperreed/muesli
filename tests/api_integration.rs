@@ -176,55 +176,54 @@ async fn test_get_transcript_with_raw() {
     assert!(api_resp.raw.contains("42"));
 }
 
-/// Test A: list_documents_with_notes returns panels with user and enhanced notes
+/// Test A: list_documents_with_notes returns user notes and AI summary
 #[tokio::test]
-async fn test_list_documents_with_notes_returns_panels() {
+async fn test_list_documents_with_notes_returns_notes_and_lvp() {
     let mock_server = MockServer::start().await;
 
+    // Matches actual Granola API structure:
+    // - `notes` is a ProseMirror doc (user's manual notes)
+    // - `last_viewed_panel` is a wrapper object whose `content` holds the AI summary
     let response = serde_json::json!({
         "docs": [
             {
                 "id": "doc-notes-1",
                 "title": "Meeting with Notes",
                 "created_at": "2025-11-01T10:00:00Z",
-                "panels": [
-                    {
-                        "type": "my_notes",
-                        "content": {
-                            "type": "doc",
+                "notes": {
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "paragraph",
                             "content": [
-                                {
-                                    "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "My personal notes"}
-                                    ]
-                                }
+                                {"type": "text", "text": "My personal notes"}
                             ]
                         }
-                    },
-                    {
-                        "type": "enhanced_notes",
-                        "content": {
-                            "type": "doc",
-                            "content": [
-                                {
-                                    "type": "heading",
-                                    "attrs": {"level": 2},
-                                    "content": [
-                                        {"type": "text", "text": "Action Items"}
-                                    ]
-                                },
-                                {
-                                    "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "Follow up on "},
-                                        {"type": "text", "text": "deployment", "marks": [{"type": "bold"}]}
-                                    ]
-                                }
-                            ]
-                        }
+                    ]
+                },
+                "last_viewed_panel": {
+                    "id": "panel-abc",
+                    "title": "Summary",
+                    "content": {
+                        "type": "doc",
+                        "content": [
+                            {
+                                "type": "heading",
+                                "attrs": {"level": 2},
+                                "content": [
+                                    {"type": "text", "text": "Action Items"}
+                                ]
+                            },
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {"type": "text", "text": "Follow up on "},
+                                    {"type": "text", "text": "deployment", "marks": [{"type": "bold"}]}
+                                ]
+                            }
+                        ]
                     }
-                ]
+                }
             }
         ]
     });
@@ -251,13 +250,13 @@ async fn test_list_documents_with_notes_returns_panels() {
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].id, "doc-notes-1");
 
-    // Verify user notes from my_notes panel
+    // Verify user notes from notes field
     let user = docs[0]
         .user_notes()
         .expect("user_notes() should return parsed ProseMirrorDoc");
     assert_eq!(user.node_type, "doc");
 
-    // Verify AI summary from enhanced_notes panel
+    // Verify AI summary from last_viewed_panel.content
     let enhanced = docs[0]
         .enhanced_notes()
         .expect("enhanced_notes() should return parsed ProseMirrorDoc");
