@@ -148,7 +148,6 @@ pub fn sync_all(
 
     let mut synced = 0;
     let mut skipped = 0;
-    let mut public_api_available = true;
 
     #[cfg(feature = "embeddings")]
     let mut embedded = 0;
@@ -199,38 +198,19 @@ pub fn sync_all(
         let meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
 
-        // Extract ProseMirror notes from document summary (converted to markdown).
-        // Uses notes field with last_viewed_panel as fallback; tolerates malformed ProseMirror.
+        // Extract user notes from panels (my_notes → notes field → last_viewed_panel fallback)
         let notes_md = doc_summary
-            .prosemirror_notes()
+            .user_notes()
             .as_ref()
             .map(crate::convert::prosemirror_to_markdown)
             .filter(|s| !s.is_empty());
 
-        // Only fetch summary text from public API when we need to update storage
-        // and the public API hasn't already returned an auth error.
-        let summary_text = if should_update && public_api_available {
-            match client.get_public_note(&doc_summary.id) {
-                Ok(public_note) => public_note.summary_text,
-                Err(crate::Error::Api { status: 401, .. }) => {
-                    eprintln!(
-                        "Warning: Public API returned 401 — skipping summary fetches. \
-                         Generate a public API key at https://granola.ai/settings to enable summaries."
-                    );
-                    public_api_available = false;
-                    None
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to fetch public note for {}: {}",
-                        doc_summary.id, e
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        // Extract AI-generated summary from panels (enhanced_notes panel)
+        let summary_text = doc_summary
+            .enhanced_notes()
+            .as_ref()
+            .map(crate::convert::prosemirror_to_markdown)
+            .filter(|s| !s.is_empty());
 
         // Convert to markdown
         let md = to_markdown(

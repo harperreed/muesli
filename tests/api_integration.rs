@@ -176,9 +176,9 @@ async fn test_get_transcript_with_raw() {
     assert!(api_resp.raw.contains("42"));
 }
 
-/// Test A: list_documents_with_notes returns ProseMirror data in last_viewed_panel
+/// Test A: list_documents_with_notes returns panels with user and enhanced notes
 #[tokio::test]
-async fn test_list_documents_with_notes_returns_prosemirror() {
+async fn test_list_documents_with_notes_returns_panels() {
     let mock_server = MockServer::start().await;
 
     let response = serde_json::json!({
@@ -187,25 +187,44 @@ async fn test_list_documents_with_notes_returns_prosemirror() {
                 "id": "doc-notes-1",
                 "title": "Meeting with Notes",
                 "created_at": "2025-11-01T10:00:00Z",
-                "last_viewed_panel": {
-                    "type": "doc",
-                    "content": [
-                        {
-                            "type": "heading",
-                            "attrs": {"level": 2},
+                "panels": [
+                    {
+                        "type": "my_notes",
+                        "content": {
+                            "type": "doc",
                             "content": [
-                                {"type": "text", "text": "Action Items"}
-                            ]
-                        },
-                        {
-                            "type": "paragraph",
-                            "content": [
-                                {"type": "text", "text": "Follow up on "},
-                                {"type": "text", "text": "deployment", "marks": [{"type": "bold"}]}
+                                {
+                                    "type": "paragraph",
+                                    "content": [
+                                        {"type": "text", "text": "My personal notes"}
+                                    ]
+                                }
                             ]
                         }
-                    ]
-                }
+                    },
+                    {
+                        "type": "enhanced_notes",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "heading",
+                                    "attrs": {"level": 2},
+                                    "content": [
+                                        {"type": "text", "text": "Action Items"}
+                                    ]
+                                },
+                                {
+                                    "type": "paragraph",
+                                    "content": [
+                                        {"type": "text", "text": "Follow up on "},
+                                        {"type": "text", "text": "deployment", "marks": [{"type": "bold"}]}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
             }
         ]
     });
@@ -232,18 +251,20 @@ async fn test_list_documents_with_notes_returns_prosemirror() {
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].id, "doc-notes-1");
 
-    // Verify ProseMirror data is populated via prosemirror_notes()
-    let pm = docs[0]
-        .prosemirror_notes()
-        .expect("prosemirror_notes() should return parsed ProseMirrorDoc");
-    assert_eq!(pm.node_type, "doc");
+    // Verify user notes from my_notes panel
+    let user = docs[0]
+        .user_notes()
+        .expect("user_notes() should return parsed ProseMirrorDoc");
+    assert_eq!(user.node_type, "doc");
 
-    let content = pm.content.as_ref().unwrap();
+    // Verify AI summary from enhanced_notes panel
+    let enhanced = docs[0]
+        .enhanced_notes()
+        .expect("enhanced_notes() should return parsed ProseMirrorDoc");
+    let content = enhanced.content.as_ref().unwrap();
     assert_eq!(content.len(), 2);
     assert_eq!(content[0].node_type, "heading");
-    assert_eq!(content[1].node_type, "paragraph");
 
-    // Verify the text content is accessible
     let heading_text = content[0].content.as_ref().unwrap();
     assert_eq!(heading_text[0].text.as_deref(), Some("Action Items"));
 }
@@ -279,7 +300,7 @@ fn test_public_note_model_parsing_without_summary() {
     assert!(note.summary_text.is_none());
 }
 
-/// Test C: list_documents_with_notes sends include_last_viewed_panel in request body
+/// Test C: list_documents_with_notes sends include_panels and include_last_viewed_panel
 #[tokio::test]
 async fn test_list_documents_with_notes_sends_correct_body() {
     let mock_server = MockServer::start().await;
@@ -288,12 +309,12 @@ async fn test_list_documents_with_notes_sends_correct_body() {
         "docs": []
     });
 
-    // Use body_partial_json to verify the request body includes include_last_viewed_panel: true
+    // Verify the request body includes both panel flags
     Mock::given(method("POST"))
         .and(path("/v2/get-documents"))
         .and(header("Authorization", "Bearer test_token"))
         .and(body_partial_json(
-            serde_json::json!({"include_last_viewed_panel": true}),
+            serde_json::json!({"include_last_viewed_panel": true, "include_panels": true}),
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(response))
         .expect(1)
@@ -313,7 +334,4 @@ async fn test_list_documents_with_notes_sends_correct_body() {
 
     let docs = result.unwrap();
     assert!(docs.is_empty());
-    // The mock's expect(1) will verify the request was received with the correct body.
-    // If the body didn't match, the mock wouldn't have been triggered and the request
-    // would have gotten a 404.
 }

@@ -4,6 +4,16 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// A content panel from the Granola API (user notes or AI-enhanced notes)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Panel {
+    #[serde(rename = "type")]
+    pub panel_type: String,
+    /// ProseMirror doc — stored as raw Value to tolerate malformed structures
+    #[serde(default)]
+    pub content: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSummary {
     pub id: String,
@@ -12,23 +22,42 @@ pub struct DocumentSummary {
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
-    /// ProseMirror notes from the API — stored as raw Value to tolerate
+    /// Typed content panels (my_notes, enhanced_notes, etc.)
+    #[serde(default)]
+    pub panels: Option<Vec<Panel>>,
+    /// ProseMirror notes from the `notes` field — stored as raw Value to tolerate
     /// malformed structures (e.g. content as map instead of array)
     #[serde(default)]
     pub notes: Option<serde_json::Value>,
-    /// Alternative field name used by the internal API
+    /// Fallback field for enhanced notes content
     #[serde(default)]
     pub last_viewed_panel: Option<serde_json::Value>,
 }
 
 impl DocumentSummary {
-    /// Try to extract ProseMirror notes from either `notes` or `last_viewed_panel`.
-    /// Returns None if neither field is present or if parsing fails.
-    pub fn prosemirror_notes(&self) -> Option<ProseMirrorDoc> {
-        self.notes
-            .as_ref()
-            .or(self.last_viewed_panel.as_ref())
+    /// Extract a specific panel type's ProseMirror content from the panels array.
+    fn panel_content(&self, panel_type: &str) -> Option<ProseMirrorDoc> {
+        self.panels
+            .as_ref()?
+            .iter()
+            .find(|p| p.panel_type == panel_type)
+            .and_then(|p| p.content.as_ref())
             .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+
+    /// Extract user notes (my_notes panel → notes field → last_viewed_panel fallback).
+    pub fn user_notes(&self) -> Option<ProseMirrorDoc> {
+        self.panel_content("my_notes").or_else(|| {
+            self.notes
+                .as_ref()
+                .or(self.last_viewed_panel.as_ref())
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+        })
+    }
+
+    /// Extract AI-generated enhanced notes from the enhanced_notes panel.
+    pub fn enhanced_notes(&self) -> Option<ProseMirrorDoc> {
+        self.panel_content("enhanced_notes")
     }
 }
 
@@ -717,79 +746,135 @@ mod prosemirror_tests {
     }
 
     #[test]
-    fn test_document_summary_with_last_viewed_panel() {
+    fn test_document_summary_with_panels() {
         let json = r#"{
             "id": "doc123",
             "created_at": "2025-10-28T15:04:05Z",
-            "last_viewed_panel": {
-                "type": "doc",
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": "User notes here"}
-                        ]
+            "panels": [
+                {
+                    "type": "my_notes",
+                    "content": {
+                        "type": "doc",
+                        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "User notes"}]}]
                     }
-                ]
-            }
+                },
+                {
+                    "type": "enhanced_notes",
+                    "content": {
+                        "type": "doc",
+                        "content": [{"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Key Points"}]}]
+                    }
+                }
+            ]
         }"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
-        assert_eq!(doc.id, "doc123");
-        assert!(doc.last_viewed_panel.is_some());
-        let pm = doc.prosemirror_notes().unwrap();
-        assert_eq!(pm.node_type, "doc");
-        let content = pm.content.as_ref().unwrap();
-        assert_eq!(content.len(), 1);
+
+        let user = doc.user_notes().unwrap();
+        assert_eq!(user.node_type, "doc");
+        let content = user.content.as_ref().unwrap();
+        assert_eq!(content[0].node_type, "paragraph");
+
+        let enhanced = doc.enhanced_notes().unwrap();
+        assert_eq!(enhanced.node_type, "doc");
+        let content = enhanced.content.as_ref().unwrap();
+        assert_eq!(content[0].node_type, "heading");
     }
 
     #[test]
-    fn test_document_summary_with_notes_field() {
+    fn test_document_summary_user_notes_fallback_to_notes_field() {
+        // When no panels, user_notes() falls back to the `notes` field
         let json = r#"{
             "id": "doc456",
             "created_at": "2025-10-28T15:04:05Z",
             "notes": {
                 "type": "doc",
-                "content": [
-                    {
-                        "type": "paragraph",
-                        "content": [
-                            {"type": "text", "text": "Notes from API"}
-                        ]
-                    }
-                ]
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from notes field"}]}]
             }
         }"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
-        assert_eq!(doc.id, "doc456");
-        let pm = doc.prosemirror_notes().unwrap();
+        let pm = doc.user_notes().unwrap();
         assert_eq!(pm.node_type, "doc");
     }
 
     #[test]
-    fn test_document_summary_notes_preferred_over_last_viewed_panel() {
+    fn test_document_summary_user_notes_fallback_to_last_viewed_panel() {
+        // When no panels or notes field, user_notes() falls back to last_viewed_panel
         let json = r#"{
             "id": "doc789",
             "created_at": "2025-10-28T15:04:05Z",
-            "notes": {
-                "type": "doc",
-                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from notes"}]}]
-            },
             "last_viewed_panel": {
                 "type": "doc",
                 "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from panel"}]}]
             }
         }"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
-        // notes should be preferred over last_viewed_panel
-        let pm = doc.prosemirror_notes().unwrap();
-        let content = pm.content.unwrap();
-        let para_content = content[0].content.as_ref().unwrap();
-        assert_eq!(para_content[0].text.as_deref(), Some("from notes"));
+        let pm = doc.user_notes().unwrap();
+        assert_eq!(pm.node_type, "doc");
     }
 
     #[test]
-    fn test_document_summary_malformed_prosemirror_tolerated() {
-        // API sometimes returns ProseMirror nodes with content as {} instead of []
+    fn test_document_summary_panels_preferred_over_fallback() {
+        // my_notes panel takes precedence over notes/last_viewed_panel fields
+        let json = r#"{
+            "id": "doc789",
+            "created_at": "2025-10-28T15:04:05Z",
+            "panels": [
+                {
+                    "type": "my_notes",
+                    "content": {
+                        "type": "doc",
+                        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from panel"}]}]
+                    }
+                }
+            ],
+            "notes": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from notes field"}]}]
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        let pm = doc.user_notes().unwrap();
+        let content = pm.content.unwrap();
+        let para = content[0].content.as_ref().unwrap();
+        assert_eq!(para[0].text.as_deref(), Some("from panel"));
+    }
+
+    #[test]
+    fn test_document_summary_no_enhanced_notes_without_panel() {
+        // enhanced_notes only comes from panels, not from fallback fields
+        let json = r#"{
+            "id": "doc-no-ai",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "user notes"}]}]
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.enhanced_notes().is_none());
+        assert!(doc.user_notes().is_some());
+    }
+
+    #[test]
+    fn test_document_summary_malformed_panel_content_tolerated() {
+        // Panel with content as {} instead of valid ProseMirror
+        let json = r#"{
+            "id": "doc-malformed",
+            "created_at": "2025-10-28T15:04:05Z",
+            "panels": [
+                {
+                    "type": "enhanced_notes",
+                    "content": {"not": "valid prosemirror"}
+                }
+            ]
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.enhanced_notes().is_none());
+    }
+
+    #[test]
+    fn test_document_summary_malformed_notes_field_tolerated() {
+        // notes field with content as {} instead of []
         let json = r#"{
             "id": "doc-malformed",
             "created_at": "2025-10-28T15:04:05Z",
@@ -798,32 +883,33 @@ mod prosemirror_tests {
                 "content": {"not": "an array"}
             }
         }"#;
-        // Deserialization of DocumentSummary should succeed (notes is serde_json::Value)
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
-        assert_eq!(doc.id, "doc-malformed");
-        assert!(doc.notes.is_some());
-        // But prosemirror_notes() should return None since it can't parse as ProseMirrorDoc
-        assert!(doc.prosemirror_notes().is_none());
+        assert!(doc.user_notes().is_none());
     }
 
     #[test]
     fn test_document_summary_without_any_notes() {
         let json = r#"{"id": "doc123", "created_at": "2025-10-28T15:04:05Z"}"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
-        assert!(doc.last_viewed_panel.is_none());
+        assert!(doc.panels.is_none());
         assert!(doc.notes.is_none());
-        assert!(doc.prosemirror_notes().is_none());
+        assert!(doc.last_viewed_panel.is_none());
+        assert!(doc.user_notes().is_none());
+        assert!(doc.enhanced_notes().is_none());
     }
 
     #[test]
-    fn test_document_summary_list_with_notes_field() {
-        // Reproduces the actual API response structure that caused the deserialization error
+    fn test_document_summary_list_with_panels() {
+        // Reproduces the actual API response structure with panels
         let json = r#"{"docs":[
             {
                 "id": "doc1",
                 "created_at": "2024-07-17T14:29:30.559Z",
-                "notes": {"type":"doc","content":[{"type":"paragraph","attrs":{"id":"abc"}}]},
-                "title": "Meeting One"
+                "title": "Meeting One",
+                "panels": [
+                    {"type": "my_notes", "content": {"type": "doc", "content": [{"type": "paragraph"}]}},
+                    {"type": "enhanced_notes", "content": {"type": "doc", "content": [{"type": "heading", "attrs": {"level": 2}}]}}
+                ]
             },
             {
                 "id": "doc2",
@@ -839,7 +925,9 @@ mod prosemirror_tests {
 
         let resp: Response = serde_json::from_str(json).unwrap();
         assert_eq!(resp.docs.len(), 2);
-        assert!(resp.docs[0].prosemirror_notes().is_some());
-        assert!(resp.docs[1].prosemirror_notes().is_none());
+        assert!(resp.docs[0].user_notes().is_some());
+        assert!(resp.docs[0].enhanced_notes().is_some());
+        assert!(resp.docs[1].user_notes().is_none());
+        assert!(resp.docs[1].enhanced_notes().is_none());
     }
 }

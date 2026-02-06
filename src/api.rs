@@ -205,7 +205,7 @@ impl ApiClient {
         self.get(&url)
     }
 
-    /// List documents with optional include_last_viewed_panel param
+    /// List documents with panels (user notes + AI-enhanced notes)
     pub fn list_documents_with_notes(&self) -> Result<Vec<DocumentSummary>> {
         #[derive(serde::Deserialize)]
         struct Response {
@@ -214,7 +214,10 @@ impl ApiClient {
 
         let resp: Response = self.post(
             "/v2/get-documents",
-            json!({ "include_last_viewed_panel": true }),
+            json!({
+                "include_last_viewed_panel": true,
+                "include_panels": true
+            }),
         )?;
         Ok(resp.docs)
     }
