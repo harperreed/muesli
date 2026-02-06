@@ -24,8 +24,9 @@ pub fn run_tui(paths: &Paths) -> Result<()> {
     let conn = db::connection::open_or_create(&paths.db_path)?;
     let documents = db::queries::list_documents(&conn)?;
     let stats = db::queries::get_stats(&conn).ok();
+    let attendees = db::queries::list_all_attendees(&conn).unwrap_or_default();
 
-    let mut app = App::new(documents, stats);
+    let mut app = App::new(documents, stats, attendees);
 
     // Load preview for initial selection
     load_preview(&mut app, paths);
@@ -49,7 +50,7 @@ pub fn run_tui(paths: &Paths) -> Result<()> {
     }));
 
     // Main event loop
-    let result = run_loop(&mut terminal, &mut app, paths);
+    let result = run_loop(&mut terminal, &mut app, paths, &conn);
 
     // Restore terminal
     disable_raw_mode()
@@ -67,6 +68,7 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     paths: &Paths,
+    conn: &duckdb::Connection,
 ) -> Result<()> {
     let mut last_selected = app.selected;
 
@@ -85,6 +87,21 @@ fn run_loop(
 
             if app.should_quit {
                 break;
+            }
+
+            // Handle attendee filter changes by re-querying the DB
+            if app.attendee_filter_changed {
+                app.attendee_filter_changed = false;
+                if let Some(ref name) = app.active_attendee_filter {
+                    if let Ok(filtered_docs) = db::queries::filter_by_attendee(conn, name) {
+                        app.documents = filtered_docs;
+                        app.search_query.clear();
+                        app.filtered = (0..app.documents.len()).collect();
+                        app.selected = 0;
+                        load_preview(app, paths);
+                        last_selected = app.selected;
+                    }
+                }
             }
 
             // Open in $EDITOR on Enter
@@ -140,7 +157,7 @@ fn load_preview(app: &mut App, paths: &Paths) {
                     content
                 };
                 // Truncate for preview performance
-                let max_preview = 2000;
+                let max_preview = 4000;
                 if body.len() > max_preview {
                     let mut boundary = max_preview;
                     while boundary > 0 && !body.is_char_boundary(boundary) {

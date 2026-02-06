@@ -8,11 +8,13 @@ use crate::db::queries::{DocumentRow, Stats};
 pub enum Mode {
     Normal,
     Search,
+    AttendeeFilter,
 }
 
 /// Application state for the TUI dashboard.
 pub struct App {
     pub documents: Vec<DocumentRow>,
+    pub all_documents: Vec<DocumentRow>,
     pub filtered: Vec<usize>,
     pub selected: usize,
     pub search_query: String,
@@ -20,13 +22,23 @@ pub struct App {
     pub preview_content: Option<String>,
     pub stats: Option<Stats>,
     pub should_quit: bool,
+    pub attendees: Vec<String>,
+    pub attendee_query: String,
+    pub attendee_filtered: Vec<usize>,
+    pub attendee_selected: usize,
+    pub active_attendee_filter: Option<String>,
+    /// Flag set when attendee filter was just applied, so run loop can re-query DB.
+    pub attendee_filter_changed: bool,
 }
 
 impl App {
-    pub fn new(documents: Vec<DocumentRow>, stats: Option<Stats>) -> Self {
+    pub fn new(documents: Vec<DocumentRow>, stats: Option<Stats>, attendees: Vec<String>) -> Self {
         let filtered: Vec<usize> = (0..documents.len()).collect();
+        let attendee_filtered: Vec<usize> = (0..attendees.len()).collect();
+        let all_documents = documents.clone();
         App {
             documents,
+            all_documents,
             filtered,
             selected: 0,
             search_query: String::new(),
@@ -34,6 +46,12 @@ impl App {
             preview_content: None,
             stats,
             should_quit: false,
+            attendees,
+            attendee_query: String::new(),
+            attendee_filtered,
+            attendee_selected: 0,
+            active_attendee_filter: None,
+            attendee_filter_changed: false,
         }
     }
 
@@ -94,6 +112,67 @@ impl App {
             .get(self.selected)
             .and_then(|&idx| self.documents.get(idx))
     }
+
+    /// Filter the attendee list by the current attendee_query.
+    pub fn apply_attendee_filter(&mut self) {
+        let query = self.attendee_query.to_lowercase();
+        if query.is_empty() {
+            self.attendee_filtered = (0..self.attendees.len()).collect();
+        } else {
+            self.attendee_filtered = self
+                .attendees
+                .iter()
+                .enumerate()
+                .filter(|(_, name)| name.to_lowercase().contains(&query))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        if self.attendee_selected >= self.attendee_filtered.len() {
+            self.attendee_selected = 0;
+        }
+    }
+
+    /// Apply the selected attendee as the document filter.
+    /// Sets the flag so run.rs can re-query the DB.
+    pub fn select_attendee(&mut self) {
+        if let Some(&idx) = self.attendee_filtered.get(self.attendee_selected) {
+            let name = self.attendees[idx].clone();
+            self.active_attendee_filter = Some(name);
+            self.attendee_filter_changed = true;
+        }
+        self.attendee_query.clear();
+        self.attendee_filtered = (0..self.attendees.len()).collect();
+        self.attendee_selected = 0;
+        self.mode = Mode::Normal;
+    }
+
+    /// Clear the attendee filter and restore the full document list.
+    pub fn clear_attendee_filter(&mut self) {
+        self.active_attendee_filter = None;
+        self.documents = self.all_documents.clone();
+        self.search_query.clear();
+        self.filtered = (0..self.documents.len()).collect();
+        self.selected = 0;
+        self.attendee_filter_changed = false;
+    }
+
+    /// Move selection to the next attendee in the filtered list.
+    pub fn attendee_select_next(&mut self) {
+        if !self.attendee_filtered.is_empty() {
+            self.attendee_selected = (self.attendee_selected + 1) % self.attendee_filtered.len();
+        }
+    }
+
+    /// Move selection to the previous attendee in the filtered list.
+    pub fn attendee_select_prev(&mut self) {
+        if !self.attendee_filtered.is_empty() {
+            if self.attendee_selected == 0 {
+                self.attendee_selected = self.attendee_filtered.len() - 1;
+            } else {
+                self.attendee_selected -= 1;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -115,9 +194,17 @@ mod tests {
             .collect()
     }
 
+    fn make_attendees() -> Vec<String> {
+        vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "Charlie".to_string(),
+        ]
+    }
+
     #[test]
     fn test_new_empty() {
-        let app = App::new(vec![], None);
+        let app = App::new(vec![], None, vec![]);
         assert!(app.filtered.is_empty());
         assert_eq!(app.selected, 0);
         assert_eq!(app.mode, Mode::Normal);
@@ -127,15 +214,23 @@ mod tests {
     #[test]
     fn test_new_with_docs() {
         let docs = make_docs(&["Meeting A", "Meeting B"]);
-        let app = App::new(docs, None);
+        let app = App::new(docs, None, vec![]);
         assert_eq!(app.filtered.len(), 2);
         assert_eq!(app.selected, 0);
     }
 
     #[test]
+    fn test_new_preserves_all_documents() {
+        let docs = make_docs(&["A", "B"]);
+        let app = App::new(docs, None, vec![]);
+        assert_eq!(app.all_documents.len(), 2);
+        assert_eq!(app.documents.len(), 2);
+    }
+
+    #[test]
     fn test_select_next() {
         let docs = make_docs(&["A", "B", "C"]);
-        let mut app = App::new(docs, None);
+        let mut app = App::new(docs, None, vec![]);
         assert_eq!(app.selected, 0);
         app.select_next();
         assert_eq!(app.selected, 1);
@@ -148,7 +243,7 @@ mod tests {
     #[test]
     fn test_select_prev() {
         let docs = make_docs(&["A", "B", "C"]);
-        let mut app = App::new(docs, None);
+        let mut app = App::new(docs, None, vec![]);
         assert_eq!(app.selected, 0);
         app.select_prev();
         assert_eq!(app.selected, 2); // wraps to end
@@ -159,7 +254,7 @@ mod tests {
     #[test]
     fn test_filter() {
         let docs = make_docs(&["Q4 Planning", "Weekly Standup", "Design Review"]);
-        let mut app = App::new(docs, None);
+        let mut app = App::new(docs, None, vec![]);
         app.search_query = "planning".to_string();
         app.apply_filter();
         assert_eq!(app.filtered.len(), 1);
@@ -169,7 +264,7 @@ mod tests {
     #[test]
     fn test_clear_filter() {
         let docs = make_docs(&["Q4 Planning", "Weekly Standup"]);
-        let mut app = App::new(docs, None);
+        let mut app = App::new(docs, None, vec![]);
         app.search_query = "planning".to_string();
         app.apply_filter();
         assert_eq!(app.filtered.len(), 1);
@@ -182,16 +277,102 @@ mod tests {
     #[test]
     fn test_selected_document() {
         let docs = make_docs(&["A", "B"]);
-        let app = App::new(docs, None);
+        let app = App::new(docs, None, vec![]);
         let doc = app.selected_document().unwrap();
         assert_eq!(doc.title.as_deref(), Some("A"));
     }
 
     #[test]
     fn test_select_next_empty() {
-        let mut app = App::new(vec![], None);
+        let mut app = App::new(vec![], None, vec![]);
         app.select_next(); // should not panic
         app.select_prev(); // should not panic
         assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn test_attendee_filter_narrows_list() {
+        let docs = make_docs(&["A"]);
+        let attendees = make_attendees();
+        let mut app = App::new(docs, None, attendees);
+        assert_eq!(app.attendee_filtered.len(), 3);
+
+        app.attendee_query = "ali".to_string();
+        app.apply_attendee_filter();
+        assert_eq!(app.attendee_filtered.len(), 1);
+        assert_eq!(app.attendees[app.attendee_filtered[0]], "Alice");
+    }
+
+    #[test]
+    fn test_attendee_filter_case_insensitive() {
+        let docs = make_docs(&["A"]);
+        let attendees = make_attendees();
+        let mut app = App::new(docs, None, attendees);
+
+        app.attendee_query = "BOB".to_string();
+        app.apply_attendee_filter();
+        assert_eq!(app.attendee_filtered.len(), 1);
+        assert_eq!(app.attendees[app.attendee_filtered[0]], "Bob");
+    }
+
+    #[test]
+    fn test_select_attendee_sets_filter() {
+        let docs = make_docs(&["A", "B"]);
+        let attendees = make_attendees();
+        let mut app = App::new(docs, None, attendees);
+
+        // Select "Bob" (index 1)
+        app.attendee_selected = 1;
+        app.select_attendee();
+        assert_eq!(app.active_attendee_filter, Some("Bob".to_string()));
+        assert!(app.attendee_filter_changed);
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(app.attendee_query.is_empty());
+    }
+
+    #[test]
+    fn test_clear_attendee_filter_restores_docs() {
+        let docs = make_docs(&["A", "B", "C"]);
+        let attendees = make_attendees();
+        let mut app = App::new(docs, None, attendees);
+        assert_eq!(app.all_documents.len(), 3);
+
+        // Simulate an attendee filter reducing documents
+        app.documents = make_docs(&["A"]);
+        app.filtered = vec![0];
+        app.active_attendee_filter = Some("Alice".to_string());
+
+        app.clear_attendee_filter();
+        assert_eq!(app.documents.len(), 3);
+        assert_eq!(app.filtered.len(), 3);
+        assert!(app.active_attendee_filter.is_none());
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_attendee_select_next_prev() {
+        let docs = make_docs(&["A"]);
+        let attendees = make_attendees();
+        let mut app = App::new(docs, None, attendees);
+
+        assert_eq!(app.attendee_selected, 0);
+        app.attendee_select_next();
+        assert_eq!(app.attendee_selected, 1);
+        app.attendee_select_next();
+        assert_eq!(app.attendee_selected, 2);
+        app.attendee_select_next();
+        assert_eq!(app.attendee_selected, 0); // wraps
+
+        app.attendee_select_prev();
+        assert_eq!(app.attendee_selected, 2); // wraps to end
+    }
+
+    #[test]
+    fn test_attendee_select_empty() {
+        let docs = make_docs(&["A"]);
+        let mut app = App::new(docs, None, vec![]);
+        app.attendee_select_next(); // should not panic
+        app.attendee_select_prev(); // should not panic
+        assert_eq!(app.attendee_selected, 0);
     }
 }

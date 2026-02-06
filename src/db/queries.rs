@@ -406,6 +406,18 @@ pub fn average_duration(conn: &Connection) -> Result<f64> {
     Ok(avg)
 }
 
+/// List all unique attendee names, sorted alphabetically.
+pub fn list_all_attendees(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT name FROM attendees WHERE name IS NOT NULL ORDER BY name")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut names = Vec::new();
+    for row in rows {
+        names.push(row?);
+    }
+    Ok(names)
+}
+
 /// Get label frequency distribution.
 pub fn label_distribution(conn: &Connection) -> Result<Vec<LabelFrequency>> {
     let mut stmt = conn.prepare(
@@ -730,6 +742,26 @@ mod tests {
         assert_eq!(dist[0].count, 2);
         assert_eq!(dist[1].label, "Q4");
         assert_eq!(dist[1].count, 1);
+    }
+
+    #[test]
+    fn test_list_all_attendees() {
+        let conn = open_in_memory().unwrap();
+        let meta1 = make_metadata_with_attendees("Meeting A", &["Charlie", "Alice"], &[]);
+        let meta2 = make_metadata_with_attendees("Meeting B", &["Bob", "Alice"], &[]);
+        upsert_document(&conn, &meta1, "doc1", "a", None, None).unwrap();
+        upsert_document(&conn, &meta2, "doc2", "b", None, None).unwrap();
+
+        let attendees = list_all_attendees(&conn).unwrap();
+        // Should be deduplicated and sorted alphabetically
+        assert_eq!(attendees, vec!["Alice", "Bob", "Charlie"]);
+    }
+
+    #[test]
+    fn test_list_all_attendees_empty() {
+        let conn = open_in_memory().unwrap();
+        let attendees = list_all_attendees(&conn).unwrap();
+        assert!(attendees.is_empty());
     }
 
     #[test]
