@@ -5,6 +5,7 @@ use crate::{DocumentMetadata, DocumentSummary, Error, PublicNote, RawTranscript,
 use rand::Rng;
 use reqwest::blocking::Client;
 use serde_json::json;
+use std::collections::HashSet;
 use std::time::Duration;
 
 /// Holds both the raw JSON text and the parsed value from an API response
@@ -217,6 +218,7 @@ impl ApiClient {
         let batch_size = 100;
         let mut all_docs = Vec::new();
         let mut offset = 0;
+        let mut seen_ids = HashSet::new();
 
         loop {
             let resp: Response = self.post(
@@ -230,6 +232,18 @@ impl ApiClient {
             )?;
 
             let count = resp.docs.len();
+
+            // Guard against infinite loops: if the API ignores limit/offset
+            // and keeps returning the same documents, break when no new IDs appear.
+            let new_count = resp
+                .docs
+                .iter()
+                .filter(|d| seen_ids.insert(d.id.clone()))
+                .count();
+            if new_count == 0 && count > 0 {
+                break;
+            }
+
             all_docs.extend(resp.docs);
 
             if count < batch_size {

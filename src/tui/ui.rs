@@ -167,24 +167,28 @@ fn draw_meeting_list(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_preview(frame: &mut Frame, app: &App, area: Rect) {
-    let content = if let Some(ref preview) = app.preview_content {
-        preview.clone()
-    } else if let Some(doc) = app.selected_document() {
-        let title = doc.title.as_deref().unwrap_or("Untitled");
-        let date = doc.created_at.format("%Y-%m-%d %H:%M");
-        let dur = doc
-            .duration_seconds
-            .map(|d| format!("{} min", d / 60))
-            .unwrap_or_else(|| "unknown".to_string());
-        format!(
-            "# {}\n\nDate: {}\nDuration: {}\nID: {}\n\nPress Enter to open full transcript.",
-            title, date, dur, doc.doc_id
-        )
+    // Use cached parsed markdown when available (file previews).
+    // Fall back to inline parsing for metadata-only or empty states.
+    let fallback_content;
+    let text = if let Some(ref cached) = app.preview_parsed {
+        cached.clone()
     } else {
-        "No document selected".to_string()
+        fallback_content = if let Some(doc) = app.selected_document() {
+            let title = doc.title.as_deref().unwrap_or("Untitled");
+            let date = doc.created_at.format("%Y-%m-%d %H:%M");
+            let dur = doc
+                .duration_seconds
+                .map(|d| format!("{} min", d / 60))
+                .unwrap_or_else(|| "unknown".to_string());
+            format!(
+                "# {}\n\nDate: {}\nDuration: {}\nID: {}\n\nPress Enter to open full transcript.",
+                title, date, dur, doc.doc_id
+            )
+        } else {
+            "No document selected".to_string()
+        };
+        tui_markdown::from_str(&fallback_content)
     };
-
-    let text = tui_markdown::from_str(&content);
 
     let border_color = if app.focused_pane == FocusedPane::Preview {
         Color::Cyan

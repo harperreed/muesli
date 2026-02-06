@@ -24,14 +24,28 @@ pub struct DocumentSummary {
 
 impl DocumentSummary {
     /// Extract user notes from the `notes` field.
+    /// Falls back to `last_viewed_panel.content` when `notes` is present but
+    /// malformed (e.g. ProseMirror `content` is a map instead of an array).
     pub fn user_notes(&self) -> Option<ProseMirrorDoc> {
         self.notes
             .as_ref()
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .and_then(|v| serde_json::from_value::<ProseMirrorDoc>(v.clone()).ok())
+            .or_else(|| {
+                self.last_viewed_panel
+                    .as_ref()
+                    .and_then(|v| v.get("content"))
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+            })
     }
 
     /// Extract AI-generated summary from `last_viewed_panel.content`.
     /// The LVP is a wrapper object; the ProseMirror doc lives in its `content` field.
+    ///
+    /// LIMITATION: `last_viewed_panel` reflects whichever panel the user viewed
+    /// last in the Granola UI. This could be the user's own notes panel rather
+    /// than the AI summary panel. The API response does not include a `type` or
+    /// `panel_kind` field that would let us distinguish between them, so callers
+    /// should be aware that the returned content may not always be the AI summary.
     pub fn enhanced_notes(&self) -> Option<ProseMirrorDoc> {
         self.last_viewed_panel
             .as_ref()
@@ -848,6 +862,110 @@ mod prosemirror_tests {
         assert!(doc.last_viewed_panel.is_none());
         assert!(doc.user_notes().is_none());
         assert!(doc.enhanced_notes().is_none());
+    }
+
+    #[test]
+    fn test_user_notes_falls_back_to_lvp_when_notes_malformed() {
+        // notes is present but malformed (content is {} instead of []),
+        // so user_notes() should fall back to last_viewed_panel.content
+        let json = r#"{
+            "id": "doc-fallback",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": {"not": "an array"}
+            },
+            "last_viewed_panel": {
+                "title": "My Notes",
+                "content": {
+                    "type": "doc",
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": "fallback notes"}]}]
+                }
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        let pm = doc.user_notes().expect("should fall back to LVP content");
+        assert_eq!(pm.node_type, "doc");
+        let content = pm.content.as_ref().unwrap();
+        let para = content[0].content.as_ref().unwrap();
+        assert_eq!(para[0].text.as_deref(), Some("fallback notes"));
+    }
+
+    #[test]
+    fn test_user_notes_no_fallback_when_notes_valid() {
+        // When notes parses successfully, user_notes() returns it directly
+        // and does NOT fall back to last_viewed_panel
+        let json = r#"{
+            "id": "doc-no-fallback",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "real notes"}]}]
+            },
+            "last_viewed_panel": {
+                "title": "Summary",
+                "content": {
+                    "type": "doc",
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": "AI summary"}]}]
+                }
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        let pm = doc.user_notes().unwrap();
+        let content = pm.content.as_ref().unwrap();
+        let para = content[0].content.as_ref().unwrap();
+        assert_eq!(para[0].text.as_deref(), Some("real notes"));
+    }
+
+    #[test]
+    fn test_user_notes_none_when_both_absent() {
+        // Neither notes nor last_viewed_panel present
+        let json = r#"{"id": "doc-empty", "created_at": "2025-10-28T15:04:05Z"}"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.user_notes().is_none());
+    }
+
+    #[test]
+    fn test_user_notes_none_when_notes_malformed_and_no_lvp() {
+        // notes is malformed and there is no last_viewed_panel to fall back to
+        let json = r#"{
+            "id": "doc-stuck",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": {"bad": "data"}
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.user_notes().is_none());
+    }
+
+    #[test]
+    fn test_enhanced_notes_may_return_user_notes_panel() {
+        // Demonstrates the documented limitation: last_viewed_panel could be
+        // the user's own notes panel if that's what they viewed last.
+        // enhanced_notes() has no way to distinguish panel types because the
+        // API does not expose a panel type/kind field.
+        let json = r#"{
+            "id": "doc-ambiguous",
+            "created_at": "2025-10-28T15:04:05Z",
+            "last_viewed_panel": {
+                "title": "My Notes",
+                "content": {
+                    "type": "doc",
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": "these are user notes, not AI"}]}]
+                }
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        // enhanced_notes() returns content regardless of which panel type it is
+        let pm = doc.enhanced_notes().unwrap();
+        let content = pm.content.as_ref().unwrap();
+        let para = content[0].content.as_ref().unwrap();
+        assert_eq!(
+            para[0].text.as_deref(),
+            Some("these are user notes, not AI")
+        );
     }
 
     #[test]

@@ -17,8 +17,11 @@ pub struct EmbeddingEngine {
 
 impl EmbeddingEngine {
     pub fn new(model_path: &Path, tokenizer_path: &Path) -> Result<Self> {
-        // Initialize ort globally (idempotent, returns false if already initialized)
-        ort::init().commit();
+        // Initialize ort globally (fire-and-forget). Returns bool: true if this
+        // call configured the environment, false if already initialized. Either
+        // way the runtime is ready to use, so the return value is intentionally
+        // discarded.
+        let _ = ort::init().commit();
 
         // Load tokenizer
         let tokenizer = Arc::new(

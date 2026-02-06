@@ -30,6 +30,7 @@ pub fn run_tui(paths: &Paths) -> Result<()> {
 
     // Load preview for initial selection
     load_preview(&mut app, paths);
+    app.parse_preview();
 
     // Setup terminal
     enable_raw_mode().map_err(|e| crate::Error::Filesystem(io::Error::other(e)))?;
@@ -98,6 +99,7 @@ fn run_loop(
                         app.filtered = (0..app.documents.len()).collect();
                         app.selected = 0;
                         load_preview(app, paths);
+                        app.parse_preview();
                         last_selected = app.selected;
                         last_doc_count = app.documents.len();
                     }
@@ -107,6 +109,7 @@ fn run_loop(
             // Refresh preview when document list changes (e.g., attendee filter cleared)
             if app.documents.len() != last_doc_count {
                 load_preview(app, paths);
+                app.parse_preview();
                 last_selected = app.selected;
                 last_doc_count = app.documents.len();
             }
@@ -138,6 +141,7 @@ fn run_loop(
             // Update preview when selection changes
             if app.selected != last_selected {
                 load_preview(app, paths);
+                app.parse_preview();
                 app.reset_preview_scroll();
                 last_selected = app.selected;
             }
@@ -147,6 +151,16 @@ fn run_loop(
     Ok(())
 }
 
+/// Strip YAML frontmatter from markdown content.
+/// Uses `splitn(3, "---\n")` so that `---` separators within the body are preserved.
+fn strip_frontmatter(content: &str) -> &str {
+    if content.starts_with("---\n") {
+        content.splitn(3, "---\n").nth(2).unwrap_or(content)
+    } else {
+        content
+    }
+}
+
 /// Load the preview content for the currently selected document.
 fn load_preview(app: &mut App, paths: &Paths) {
     app.preview_content = None;
@@ -154,17 +168,7 @@ fn load_preview(app: &mut App, paths: &Paths) {
         if let Some(ref fname) = doc.filename {
             let md_path = paths.transcripts_dir.join(format!("{}.md", fname));
             if let Ok(content) = std::fs::read_to_string(&md_path) {
-                // Strip frontmatter for preview (splitn limits to 3 parts
-                // so body-internal "---" separators are preserved)
-                let body = if content.starts_with("---\n") {
-                    content
-                        .splitn(3, "---\n")
-                        .nth(2)
-                        .unwrap_or(&content)
-                        .to_string()
-                } else {
-                    content
-                };
+                let body = strip_frontmatter(&content).to_string();
                 // Truncate for preview performance
                 let max_preview = 4000;
                 if body.len() > max_preview {
@@ -178,5 +182,45 @@ fn load_preview(app: &mut App, paths: &Paths) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_frontmatter_removes_yaml_header() {
+        let input = "---\ntitle: Hello\ndate: 2025-01-01\n---\n# Body\n\nContent here.\n";
+        let result = strip_frontmatter(input);
+        assert_eq!(result, "# Body\n\nContent here.\n");
+    }
+
+    #[test]
+    fn test_strip_frontmatter_preserves_body_internal_separators() {
+        let input =
+            "---\ntitle: Hello\n---\n# Body\n\nBefore separator\n\n---\n\nAfter separator\n";
+        let result = strip_frontmatter(input);
+        assert_eq!(
+            result, "# Body\n\nBefore separator\n\n---\n\nAfter separator\n",
+            "body-internal --- separators must be preserved"
+        );
+    }
+
+    #[test]
+    fn test_strip_frontmatter_no_frontmatter() {
+        let input = "# Just a heading\n\nSome content.\n";
+        let result = strip_frontmatter(input);
+        assert_eq!(
+            result, input,
+            "content without frontmatter should pass through unchanged"
+        );
+    }
+
+    #[test]
+    fn test_strip_frontmatter_empty_frontmatter() {
+        let input = "---\n---\nBody only.\n";
+        let result = strip_frontmatter(input);
+        assert_eq!(result, "Body only.\n");
     }
 }

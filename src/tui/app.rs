@@ -1,6 +1,10 @@
 // ABOUTME: TUI application state and data management
 // ABOUTME: Holds document list, selection state, search query, and mode
 
+use std::borrow::Cow;
+
+use ratatui::text::{Line, Span, Text};
+
 use crate::db::queries::{DocumentRow, Stats};
 
 /// Interaction mode for the TUI.
@@ -27,6 +31,8 @@ pub struct App {
     pub search_query: String,
     pub mode: Mode,
     pub preview_content: Option<String>,
+    /// Cached parsed markdown from `preview_content`, to avoid re-parsing every frame.
+    pub preview_parsed: Option<ratatui::text::Text<'static>>,
     pub stats: Option<Stats>,
     pub should_quit: bool,
     pub attendees: Vec<String>,
@@ -42,6 +48,30 @@ pub struct App {
     pub preview_scroll: u16,
 }
 
+/// Convert a `Text<'_>` to `Text<'static>` by making all `Cow` string data owned.
+fn text_to_static(text: Text<'_>) -> Text<'static> {
+    Text {
+        alignment: text.alignment,
+        style: text.style,
+        lines: text
+            .lines
+            .into_iter()
+            .map(|line| Line {
+                style: line.style,
+                alignment: line.alignment,
+                spans: line
+                    .spans
+                    .into_iter()
+                    .map(|span| Span {
+                        style: span.style,
+                        content: Cow::Owned(span.content.into_owned()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 impl App {
     pub fn new(documents: Vec<DocumentRow>, stats: Option<Stats>, attendees: Vec<String>) -> Self {
         let filtered: Vec<usize> = (0..documents.len()).collect();
@@ -55,6 +85,7 @@ impl App {
             search_query: String::new(),
             mode: Mode::Normal,
             preview_content: None,
+            preview_parsed: None,
             stats,
             should_quit: false,
             attendees,
@@ -197,6 +228,15 @@ impl App {
     /// Reset preview scroll to the top (called when selection changes).
     pub fn reset_preview_scroll(&mut self) {
         self.preview_scroll = 0;
+    }
+
+    /// Parse `preview_content` into styled `Text` and cache it in `preview_parsed`.
+    /// Call this after setting `preview_content` to avoid re-parsing on every frame draw.
+    pub fn parse_preview(&mut self) {
+        self.preview_parsed = self
+            .preview_content
+            .as_deref()
+            .map(|s| text_to_static(tui_markdown::from_str(s)));
     }
 
     /// Move selection to the previous attendee in the filtered list.
@@ -454,5 +494,38 @@ mod tests {
         app.preview_scroll = 42;
         app.reset_preview_scroll();
         assert_eq!(app.preview_scroll, 0);
+    }
+
+    #[test]
+    fn test_parse_preview_caches_parsed_text() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert!(app.preview_parsed.is_none());
+
+        app.preview_content = Some("# Hello\n\nSome **bold** text".to_string());
+        app.parse_preview();
+        assert!(app.preview_parsed.is_some());
+
+        let parsed = app.preview_parsed.as_ref().unwrap();
+        assert!(!parsed.lines.is_empty(), "parsed text should have lines");
+    }
+
+    #[test]
+    fn test_parse_preview_none_when_no_content() {
+        let mut app = App::new(vec![], None, vec![]);
+        app.preview_content = None;
+        app.parse_preview();
+        assert!(app.preview_parsed.is_none());
+    }
+
+    #[test]
+    fn test_text_to_static_preserves_content() {
+        let original = tui_markdown::from_str("# Test\n\n- item one\n- item two");
+        let original_line_count = original.lines.len();
+        let static_text = super::text_to_static(original);
+        assert_eq!(
+            static_text.lines.len(),
+            original_line_count,
+            "static text should have the same number of lines"
+        );
     }
 }

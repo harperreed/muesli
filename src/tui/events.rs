@@ -318,6 +318,37 @@ mod tests {
     }
 
     #[test]
+    fn test_shift_c_clears_attendee_filter() {
+        let mut app = make_app();
+
+        // Simulate an active attendee filter (as if Bob was selected via @)
+        app.active_attendee_filter = Some("Bob".to_string());
+        app.documents = vec![app.documents[0].clone()]; // reduced doc list
+        app.filtered = vec![0];
+
+        // Press uppercase C (Shift+C) in Normal mode
+        handle_key_event(&mut app, key(KeyCode::Char('C')));
+
+        // Filter should be cleared and full document list restored
+        assert!(app.active_attendee_filter.is_none());
+        assert_eq!(app.documents.len(), 2); // restored from all_documents
+        assert_eq!(app.filtered.len(), 2);
+        assert_eq!(app.mode, Mode::Normal);
+    }
+
+    #[test]
+    fn test_shift_c_noop_without_active_filter() {
+        let mut app = make_app();
+        assert!(app.active_attendee_filter.is_none());
+
+        // Press uppercase C when no filter is active - should be a no-op
+        handle_key_event(&mut app, key(KeyCode::Char('C')));
+        assert!(app.active_attendee_filter.is_none());
+        assert_eq!(app.documents.len(), 2);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
     fn test_j_k_navigates_list_when_list_focused() {
         let mut app = make_app();
         assert_eq!(app.focused_pane, FocusedPane::MeetingList);
