@@ -68,6 +68,27 @@ pub fn upsert_document(
 ) -> Result<()> {
     conn.execute_batch("BEGIN TRANSACTION")?;
 
+    let result = upsert_document_inner(conn, meta, doc_id, filename, notes, summary_text);
+
+    if result.is_err() {
+        let _ = conn.execute_batch("ROLLBACK");
+        return result;
+    }
+
+    conn.execute_batch("COMMIT")?;
+    Ok(())
+}
+
+/// Inner implementation for upsert_document, called within a transaction.
+/// Separated so the caller can ROLLBACK on error.
+fn upsert_document_inner(
+    conn: &Connection,
+    meta: &DocumentMetadata,
+    doc_id: &str,
+    filename: &str,
+    notes: Option<&str>,
+    summary_text: Option<&str>,
+) -> Result<()> {
     let created_at = fmt_ts(&meta.created_at);
     let updated_at = meta.updated_at.as_ref().map(fmt_ts);
     let synced_at = fmt_ts(&Utc::now());
@@ -162,7 +183,6 @@ pub fn upsert_document(
         )?;
     }
 
-    conn.execute_batch("COMMIT")?;
     Ok(())
 }
 

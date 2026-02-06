@@ -195,16 +195,21 @@ pub fn sync_all(
             .map(crate::convert::prosemirror_to_markdown)
             .filter(|s| !s.is_empty());
 
-        // Fetch summary text from public API (graceful failure)
-        let summary_text = match client.get_public_note(&doc_summary.id) {
-            Ok(public_note) => public_note.summary_text,
-            Err(e) => {
-                eprintln!(
-                    "Warning: Failed to fetch public note for {}: {}",
-                    doc_summary.id, e
-                );
-                None
+        // Only fetch summary text from public API when we need to update storage,
+        // to avoid unnecessary API calls + throttle delays for embedding-only updates
+        let summary_text = if should_update {
+            match client.get_public_note(&doc_summary.id) {
+                Ok(public_note) => public_note.summary_text,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to fetch public note for {}: {}",
+                        doc_summary.id, e
+                    );
+                    None
+                }
             }
+        } else {
+            None
         };
 
         // Convert to markdown

@@ -37,8 +37,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             app.attendee_selected = 0;
             app.mode = Mode::AttendeeFilter;
         }
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+C clears active attendee filter
+        KeyCode::Char('C') => {
+            // Uppercase C (Shift+C) clears active attendee filter
             if app.active_attendee_filter.is_some() {
                 app.clear_attendee_filter();
             }
