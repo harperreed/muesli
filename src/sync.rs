@@ -198,9 +198,10 @@ pub fn sync_all(
         let meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
 
-        // Extract ProseMirror notes from document summary (converted to markdown)
+        // Extract ProseMirror notes from document summary (converted to markdown).
+        // Uses notes field with last_viewed_panel as fallback; tolerates malformed ProseMirror.
         let notes_md = doc_summary
-            .last_viewed_panel
+            .prosemirror_notes()
             .as_ref()
             .map(crate::convert::prosemirror_to_markdown)
             .filter(|s| !s.is_empty());

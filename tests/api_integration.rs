@@ -232,14 +232,13 @@ async fn test_list_documents_with_notes_returns_prosemirror() {
     assert_eq!(docs.len(), 1);
     assert_eq!(docs[0].id, "doc-notes-1");
 
-    // Verify ProseMirror data is populated
-    let panel = docs[0]
-        .last_viewed_panel
-        .as_ref()
-        .expect("last_viewed_panel should be populated");
-    assert_eq!(panel.node_type, "doc");
+    // Verify ProseMirror data is populated via prosemirror_notes()
+    let pm = docs[0]
+        .prosemirror_notes()
+        .expect("prosemirror_notes() should return parsed ProseMirrorDoc");
+    assert_eq!(pm.node_type, "doc");
 
-    let content = panel.content.as_ref().unwrap();
+    let content = pm.content.as_ref().unwrap();
     assert_eq!(content.len(), 2);
     assert_eq!(content[0].node_type, "heading");
     assert_eq!(content[1].node_type, "paragraph");

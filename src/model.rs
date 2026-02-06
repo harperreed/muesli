@@ -12,8 +12,24 @@ pub struct DocumentSummary {
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
+    /// ProseMirror notes from the API — stored as raw Value to tolerate
+    /// malformed structures (e.g. content as map instead of array)
     #[serde(default)]
-    pub last_viewed_panel: Option<ProseMirrorDoc>,
+    pub notes: Option<serde_json::Value>,
+    /// Alternative field name used by the internal API
+    #[serde(default)]
+    pub last_viewed_panel: Option<serde_json::Value>,
+}
+
+impl DocumentSummary {
+    /// Try to extract ProseMirror notes from either `notes` or `last_viewed_panel`.
+    /// Returns None if neither field is present or if parsing fails.
+    pub fn prosemirror_notes(&self) -> Option<ProseMirrorDoc> {
+        self.notes
+            .as_ref()
+            .or(self.last_viewed_panel.as_ref())
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
 }
 
 #[cfg(test)]
@@ -719,16 +735,111 @@ mod prosemirror_tests {
         }"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
         assert_eq!(doc.id, "doc123");
-        let panel = doc.last_viewed_panel.as_ref().unwrap();
-        assert_eq!(panel.node_type, "doc");
-        let content = panel.content.as_ref().unwrap();
+        assert!(doc.last_viewed_panel.is_some());
+        let pm = doc.prosemirror_notes().unwrap();
+        assert_eq!(pm.node_type, "doc");
+        let content = pm.content.as_ref().unwrap();
         assert_eq!(content.len(), 1);
     }
 
     #[test]
-    fn test_document_summary_without_last_viewed_panel() {
+    fn test_document_summary_with_notes_field() {
+        let json = r#"{
+            "id": "doc456",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "Notes from API"}
+                        ]
+                    }
+                ]
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.id, "doc456");
+        let pm = doc.prosemirror_notes().unwrap();
+        assert_eq!(pm.node_type, "doc");
+    }
+
+    #[test]
+    fn test_document_summary_notes_preferred_over_last_viewed_panel() {
+        let json = r#"{
+            "id": "doc789",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from notes"}]}]
+            },
+            "last_viewed_panel": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "from panel"}]}]
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        // notes should be preferred over last_viewed_panel
+        let pm = doc.prosemirror_notes().unwrap();
+        let content = pm.content.unwrap();
+        let para_content = content[0].content.as_ref().unwrap();
+        assert_eq!(para_content[0].text.as_deref(), Some("from notes"));
+    }
+
+    #[test]
+    fn test_document_summary_malformed_prosemirror_tolerated() {
+        // API sometimes returns ProseMirror nodes with content as {} instead of []
+        let json = r#"{
+            "id": "doc-malformed",
+            "created_at": "2025-10-28T15:04:05Z",
+            "notes": {
+                "type": "doc",
+                "content": {"not": "an array"}
+            }
+        }"#;
+        // Deserialization of DocumentSummary should succeed (notes is serde_json::Value)
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.id, "doc-malformed");
+        assert!(doc.notes.is_some());
+        // But prosemirror_notes() should return None since it can't parse as ProseMirrorDoc
+        assert!(doc.prosemirror_notes().is_none());
+    }
+
+    #[test]
+    fn test_document_summary_without_any_notes() {
         let json = r#"{"id": "doc123", "created_at": "2025-10-28T15:04:05Z"}"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
         assert!(doc.last_viewed_panel.is_none());
+        assert!(doc.notes.is_none());
+        assert!(doc.prosemirror_notes().is_none());
+    }
+
+    #[test]
+    fn test_document_summary_list_with_notes_field() {
+        // Reproduces the actual API response structure that caused the deserialization error
+        let json = r#"{"docs":[
+            {
+                "id": "doc1",
+                "created_at": "2024-07-17T14:29:30.559Z",
+                "notes": {"type":"doc","content":[{"type":"paragraph","attrs":{"id":"abc"}}]},
+                "title": "Meeting One"
+            },
+            {
+                "id": "doc2",
+                "created_at": "2024-07-18T10:00:00.000Z",
+                "title": "Meeting Two"
+            }
+        ]}"#;
+
+        #[derive(serde::Deserialize)]
+        struct Response {
+            docs: Vec<DocumentSummary>,
+        }
+
+        let resp: Response = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.docs.len(), 2);
+        assert!(resp.docs[0].prosemirror_notes().is_some());
+        assert!(resp.docs[1].prosemirror_notes().is_none());
     }
 }
