@@ -251,6 +251,16 @@ mod metadata_tests {
     }
 }
 
+/// Response from the official Granola public API GET /v1/notes/{id}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicNote {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub summary_text: Option<String>,
+}
+
 /// ProseMirror document root node
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProseMirrorDoc {
@@ -478,6 +488,51 @@ generator: muesli 1.0
         assert_eq!(parsed.doc_id, "doc123");
         assert!(parsed.creator.is_none());
         assert!(parsed.attendees.is_none());
+    }
+}
+
+#[cfg(test)]
+mod public_note_tests {
+    use super::*;
+
+    #[test]
+    fn test_public_note_deserialize_minimal() {
+        let json = r#"{"id": "note-abc-123"}"#;
+        let note: PublicNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.id, "note-abc-123");
+        assert!(note.title.is_none());
+        assert!(note.summary_text.is_none());
+    }
+
+    #[test]
+    fn test_public_note_deserialize_full() {
+        let json = r#"{
+            "id": "note-abc-123",
+            "title": "Sprint Planning",
+            "summary_text": "We discussed Q1 priorities and assigned tasks."
+        }"#;
+        let note: PublicNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.id, "note-abc-123");
+        assert_eq!(note.title.as_deref(), Some("Sprint Planning"));
+        assert_eq!(
+            note.summary_text.as_deref(),
+            Some("We discussed Q1 priorities and assigned tasks.")
+        );
+    }
+
+    #[test]
+    fn test_public_note_unknown_fields_tolerated() {
+        let json = r#"{
+            "id": "note-abc-123",
+            "title": "Sprint Planning",
+            "summary_text": "Summary here",
+            "some_future_field": "should not break",
+            "nested_future": {"key": "value"}
+        }"#;
+        let note: PublicNote = serde_json::from_str(json).unwrap();
+        assert_eq!(note.id, "note-abc-123");
+        assert_eq!(note.title.as_deref(), Some("Sprint Planning"));
+        assert_eq!(note.summary_text.as_deref(), Some("Summary here"));
     }
 }
 
