@@ -277,12 +277,12 @@ impl MuesliMcpService {
         // Perform sync
         #[cfg(feature = "index")]
         {
-            crate::sync::sync_all(&client, &self.paths, params.0.reindex)
+            crate::sync::sync_all(&client, &self.paths, params.0.reindex, false)
                 .map_err(|e| McpError::internal_error(format!("Sync failed: {}", e), None))?;
         }
         #[cfg(not(feature = "index"))]
         {
-            crate::sync::sync_all(&client, &self.paths, false)
+            crate::sync::sync_all(&client, &self.paths, false, false)
                 .map_err(|e| McpError::internal_error(format!("Sync failed: {}", e), None))?;
         }
 

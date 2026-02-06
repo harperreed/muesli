@@ -61,6 +61,7 @@ pub fn sync_all(
     client: &ApiClient,
     paths: &Paths,
     #[cfg_attr(not(feature = "index"), allow(unused_variables))] reindex: bool,
+    force: bool,
 ) -> Result<()> {
     paths.ensure_dirs()?;
 
@@ -125,6 +126,9 @@ pub fn sync_all(
         conn
     };
 
+    if force {
+        println!("Force sync enabled — ignoring cache timestamps");
+    }
     println!("Fetching document list...");
     let docs = client.list_documents_with_notes()?;
 
@@ -149,19 +153,25 @@ pub fn sync_all(
     let mut embedded = 0;
 
     for doc_summary in &docs {
-        // Check cache for quick timestamp comparison
+        // Check cache for quick timestamp comparison (--force bypasses cache)
         #[cfg(feature = "storage")]
         let (should_update, cached_filename) = {
-            match crate::db::queries::get_cache_entry(&db_conn, &doc_summary.id) {
-                Ok(Some(entry)) => {
-                    let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
-                    (remote_ts > entry.updated_at, Some(entry.filename))
+            if force {
+                (true, None)
+            } else {
+                match crate::db::queries::get_cache_entry(&db_conn, &doc_summary.id) {
+                    Ok(Some(entry)) => {
+                        let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+                        (remote_ts > entry.updated_at, Some(entry.filename))
+                    }
+                    _ => (true, None),
                 }
-                _ => (true, None),
             }
         };
         #[cfg(not(feature = "storage"))]
-        let should_update = if let Some(cache_entry) = cache.get(&doc_summary.id) {
+        let should_update = if force {
+            true
+        } else if let Some(cache_entry) = cache.get(&doc_summary.id) {
             let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
             remote_ts > cache_entry.updated_at
         } else {

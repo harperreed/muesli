@@ -28,6 +28,7 @@ fn run() -> Result<()> {
             println!();
         }
         Some(muesli::cli::Commands::Sync {
+            force,
             #[cfg(feature = "index")]
             reindex,
         }) => {
@@ -35,11 +36,11 @@ fn run() -> Result<()> {
             let paths = Paths::new(cli.data_dir)?;
             #[cfg(feature = "index")]
             {
-                sync_all(&client, &paths, reindex)?;
+                sync_all(&client, &paths, reindex, force)?;
             }
             #[cfg(not(feature = "index"))]
             {
-                sync_all(&client, &paths, false)?;
+                sync_all(&client, &paths, false, force)?;
             }
         }
         Some(muesli::cli::Commands::List) => {
@@ -263,10 +264,11 @@ fn run() -> Result<()> {
             // Read the transcript
             let content = std::fs::read_to_string(&md_path)?;
 
-            // Extract body (skip frontmatter)
+            // Extract body (skip frontmatter; splitn limits to 3 parts
+            // so body-internal "---" separators are preserved)
             let body = if content.starts_with("---\n") {
                 content
-                    .split("---\n")
+                    .splitn(3, "---\n")
                     .nth(2)
                     .unwrap_or(&content)
                     .to_string()

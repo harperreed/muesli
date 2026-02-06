@@ -53,6 +53,10 @@ fn parse_throttle_range(s: &str) -> Result<(u64, u64), String> {
 pub enum Commands {
     /// Sync all documents
     Sync {
+        /// Force re-sync of all documents, ignoring cache timestamps
+        #[arg(long)]
+        force: bool,
+
         /// Force reindex of all documents without re-downloading
         #[arg(long)]
         #[cfg(feature = "index")]
