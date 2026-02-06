@@ -5,6 +5,16 @@ use duckdb::Connection;
 
 use crate::Result;
 
+/// Run an ALTER TABLE ADD COLUMN statement, ignoring "already exists" errors
+/// but propagating any other failures (I/O errors, missing table, etc.).
+fn add_column_if_missing(conn: &Connection, sql: &str) -> Result<()> {
+    match conn.execute_batch(sql) {
+        Ok(()) => Ok(()),
+        Err(e) if e.to_string().to_lowercase().contains("already") => Ok(()),
+        Err(e) => Err(crate::Error::Database(e.to_string())),
+    }
+}
+
 /// Initialize the database schema, creating tables if they don't exist.
 /// Also runs migrations for existing databases that may lack newer columns.
 pub fn initialize(conn: &Connection) -> Result<()> {
@@ -58,9 +68,12 @@ pub fn initialize(conn: &Connection) -> Result<()> {
 
     // Migrate: add notes and summary_text columns for databases created before
     // these columns existed. DuckDB does not support IF NOT EXISTS for ADD COLUMN,
-    // so we silently ignore errors when the columns already exist.
-    let _ = conn.execute_batch("ALTER TABLE documents ADD COLUMN notes VARCHAR");
-    let _ = conn.execute_batch("ALTER TABLE documents ADD COLUMN summary_text VARCHAR");
+    // so we ignore "already exists" errors but propagate unexpected failures.
+    add_column_if_missing(conn, "ALTER TABLE documents ADD COLUMN notes VARCHAR")?;
+    add_column_if_missing(
+        conn,
+        "ALTER TABLE documents ADD COLUMN summary_text VARCHAR",
+    )?;
 
     Ok(())
 }
