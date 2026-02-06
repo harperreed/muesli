@@ -31,11 +31,12 @@ pub mod tui;
 
 pub use api::{ApiClient, ApiResponse};
 pub use auth::resolve_token;
-pub use convert::{to_markdown, MarkdownOutput};
+pub use convert::{prosemirror_to_markdown, to_markdown, MarkdownOutput};
 pub use error::{Error, Result};
 pub use model::{
     Attendee, CompanyInfo, DocumentMetadata, DocumentSummary, Employment, Frontmatter, LinkedIn,
-    PersonDetails, PersonInfo, PersonName, RawTranscript,
+    PersonDetails, PersonInfo, PersonName, ProseMirrorDoc, ProseMirrorMark, ProseMirrorNode,
+    RawTranscript,
 };
 pub use storage::{read_frontmatter, write_atomic, Paths};
 pub use sync::sync_all;

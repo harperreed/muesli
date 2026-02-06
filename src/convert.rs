@@ -1,7 +1,7 @@
 // ABOUTME: Converts raw transcript JSON to structured Markdown
-// ABOUTME: Supports both segment and monologue formats with frontmatter
+// ABOUTME: Supports both segment and monologue formats with frontmatter and ProseMirror conversion
 
-use crate::model::Attendee;
+use crate::model::{Attendee, ProseMirrorDoc, ProseMirrorNode};
 use crate::util::normalize_timestamp;
 use crate::{DocumentMetadata, Frontmatter, RawTranscript, Result};
 
@@ -483,5 +483,499 @@ mod snapshot_tests {
         let full = format!("---\n{}---\n\n{}", output.frontmatter_yaml, output.body);
 
         insta::assert_snapshot!(full);
+    }
+}
+
+/// Converts a ProseMirror document to Markdown text.
+///
+/// Handles doc, heading, paragraph, bulletList, listItem, and text nodes.
+/// Applies bold and italic marks. Unknown node types are skipped gracefully.
+pub fn prosemirror_to_markdown(doc: &ProseMirrorDoc) -> String {
+    let mut output = String::new();
+    if let Some(ref content) = doc.content {
+        for node in content {
+            convert_node(node, &mut output);
+        }
+    }
+    // Trim trailing whitespace but preserve the final structure
+    output.trim_end().to_string()
+}
+
+/// Recursively converts a ProseMirror node to Markdown, appending to output.
+fn convert_node(node: &ProseMirrorNode, output: &mut String) {
+    match node.node_type.as_str() {
+        "heading" => {
+            let level = node
+                .attrs
+                .as_ref()
+                .and_then(|a| a.get("level"))
+                .and_then(|l| l.as_u64())
+                .unwrap_or(1) as usize;
+            let prefix = "#".repeat(level);
+            output.push_str(&prefix);
+            output.push(' ');
+            if let Some(ref content) = node.content {
+                for child in content {
+                    render_inline(child, output);
+                }
+            }
+            output.push_str("\n\n");
+        }
+        "paragraph" => {
+            if let Some(ref content) = node.content {
+                for child in content {
+                    render_inline(child, output);
+                }
+            }
+            output.push_str("\n\n");
+        }
+        "bulletList" => {
+            if let Some(ref content) = node.content {
+                for child in content {
+                    convert_node(child, output);
+                }
+            }
+        }
+        "listItem" => {
+            output.push_str("- ");
+            if let Some(ref content) = node.content {
+                for (i, child) in content.iter().enumerate() {
+                    if child.node_type == "paragraph" {
+                        // Inline the paragraph content for list items
+                        if let Some(ref para_content) = child.content {
+                            for inline_child in para_content {
+                                render_inline(inline_child, output);
+                            }
+                        }
+                        if i < content.len() - 1 {
+                            output.push('\n');
+                        }
+                    } else {
+                        convert_node(child, output);
+                    }
+                }
+            }
+            output.push('\n');
+        }
+        "text" => {
+            render_inline(node, output);
+        }
+        _ => {
+            // Unknown node types: skip gracefully
+        }
+    }
+}
+
+/// Renders an inline node (text with optional marks) to the output string.
+fn render_inline(node: &ProseMirrorNode, output: &mut String) {
+    if node.node_type == "text" {
+        let text = node.text.as_deref().unwrap_or("");
+        if let Some(ref marks) = node.marks {
+            let has_bold = marks.iter().any(|m| m.mark_type == "bold");
+            let has_italic = marks.iter().any(|m| m.mark_type == "italic");
+            if has_bold && has_italic {
+                output.push_str("***");
+                output.push_str(text);
+                output.push_str("***");
+            } else if has_bold {
+                output.push_str("**");
+                output.push_str(text);
+                output.push_str("**");
+            } else if has_italic {
+                output.push('*');
+                output.push_str(text);
+                output.push('*');
+            } else {
+                output.push_str(text);
+            }
+        } else {
+            output.push_str(text);
+        }
+    }
+}
+
+#[cfg(test)]
+mod prosemirror_convert_tests {
+    use super::*;
+    use crate::model::{ProseMirrorDoc, ProseMirrorMark, ProseMirrorNode};
+
+    #[test]
+    fn test_paragraph_to_text() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![ProseMirrorNode {
+                node_type: "paragraph".into(),
+                content: Some(vec![ProseMirrorNode {
+                    node_type: "text".into(),
+                    content: None,
+                    text: Some("Hello world".into()),
+                    attrs: None,
+                    marks: None,
+                }]),
+                text: None,
+                attrs: None,
+                marks: None,
+            }]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "Hello world");
+    }
+
+    #[test]
+    fn test_heading_levels() {
+        for level in 1..=3 {
+            let doc = ProseMirrorDoc {
+                node_type: "doc".into(),
+                content: Some(vec![ProseMirrorNode {
+                    node_type: "heading".into(),
+                    content: Some(vec![ProseMirrorNode {
+                        node_type: "text".into(),
+                        content: None,
+                        text: Some("Title".into()),
+                        attrs: None,
+                        marks: None,
+                    }]),
+                    text: None,
+                    attrs: Some(serde_json::json!({"level": level})),
+                    marks: None,
+                }]),
+            };
+            let md = prosemirror_to_markdown(&doc);
+            let prefix = "#".repeat(level as usize);
+            assert_eq!(md, format!("{} Title", prefix));
+        }
+    }
+
+    #[test]
+    fn test_bullet_list() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![ProseMirrorNode {
+                node_type: "bulletList".into(),
+                content: Some(vec![
+                    ProseMirrorNode {
+                        node_type: "listItem".into(),
+                        content: Some(vec![ProseMirrorNode {
+                            node_type: "paragraph".into(),
+                            content: Some(vec![ProseMirrorNode {
+                                node_type: "text".into(),
+                                content: None,
+                                text: Some("First item".into()),
+                                attrs: None,
+                                marks: None,
+                            }]),
+                            text: None,
+                            attrs: None,
+                            marks: None,
+                        }]),
+                        text: None,
+                        attrs: None,
+                        marks: None,
+                    },
+                    ProseMirrorNode {
+                        node_type: "listItem".into(),
+                        content: Some(vec![ProseMirrorNode {
+                            node_type: "paragraph".into(),
+                            content: Some(vec![ProseMirrorNode {
+                                node_type: "text".into(),
+                                content: None,
+                                text: Some("Second item".into()),
+                                attrs: None,
+                                marks: None,
+                            }]),
+                            text: None,
+                            attrs: None,
+                            marks: None,
+                        }]),
+                        text: None,
+                        attrs: None,
+                        marks: None,
+                    },
+                ]),
+                text: None,
+                attrs: None,
+                marks: None,
+            }]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "- First item\n- Second item");
+    }
+
+    #[test]
+    fn test_bold_text() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![ProseMirrorNode {
+                node_type: "paragraph".into(),
+                content: Some(vec![ProseMirrorNode {
+                    node_type: "text".into(),
+                    content: None,
+                    text: Some("important".into()),
+                    attrs: None,
+                    marks: Some(vec![ProseMirrorMark {
+                        mark_type: "bold".into(),
+                    }]),
+                }]),
+                text: None,
+                attrs: None,
+                marks: None,
+            }]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "**important**");
+    }
+
+    #[test]
+    fn test_italic_text() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![ProseMirrorNode {
+                node_type: "paragraph".into(),
+                content: Some(vec![ProseMirrorNode {
+                    node_type: "text".into(),
+                    content: None,
+                    text: Some("emphasis".into()),
+                    attrs: None,
+                    marks: Some(vec![ProseMirrorMark {
+                        mark_type: "italic".into(),
+                    }]),
+                }]),
+                text: None,
+                attrs: None,
+                marks: None,
+            }]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "*emphasis*");
+    }
+
+    #[test]
+    fn test_bold_italic_text() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![ProseMirrorNode {
+                node_type: "paragraph".into(),
+                content: Some(vec![ProseMirrorNode {
+                    node_type: "text".into(),
+                    content: None,
+                    text: Some("both".into()),
+                    attrs: None,
+                    marks: Some(vec![
+                        ProseMirrorMark {
+                            mark_type: "bold".into(),
+                        },
+                        ProseMirrorMark {
+                            mark_type: "italic".into(),
+                        },
+                    ]),
+                }]),
+                text: None,
+                attrs: None,
+                marks: None,
+            }]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "***both***");
+    }
+
+    #[test]
+    fn test_mixed_content() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![
+                ProseMirrorNode {
+                    node_type: "heading".into(),
+                    content: Some(vec![ProseMirrorNode {
+                        node_type: "text".into(),
+                        content: None,
+                        text: Some("Meeting Notes".into()),
+                        attrs: None,
+                        marks: None,
+                    }]),
+                    text: None,
+                    attrs: Some(serde_json::json!({"level": 1})),
+                    marks: None,
+                },
+                ProseMirrorNode {
+                    node_type: "paragraph".into(),
+                    content: Some(vec![
+                        ProseMirrorNode {
+                            node_type: "text".into(),
+                            content: None,
+                            text: Some("Some ".into()),
+                            attrs: None,
+                            marks: None,
+                        },
+                        ProseMirrorNode {
+                            node_type: "text".into(),
+                            content: None,
+                            text: Some("bold".into()),
+                            attrs: None,
+                            marks: Some(vec![ProseMirrorMark {
+                                mark_type: "bold".into(),
+                            }]),
+                        },
+                        ProseMirrorNode {
+                            node_type: "text".into(),
+                            content: None,
+                            text: Some(" text".into()),
+                            attrs: None,
+                            marks: None,
+                        },
+                    ]),
+                    text: None,
+                    attrs: None,
+                    marks: None,
+                },
+            ]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "# Meeting Notes\n\nSome **bold** text");
+    }
+
+    #[test]
+    fn test_empty_doc() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: None,
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "");
+    }
+
+    #[test]
+    fn test_empty_doc_with_empty_content() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "");
+    }
+
+    #[test]
+    fn test_unknown_node_types_skipped() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![
+                ProseMirrorNode {
+                    node_type: "customWidget".into(),
+                    content: None,
+                    text: None,
+                    attrs: None,
+                    marks: None,
+                },
+                ProseMirrorNode {
+                    node_type: "paragraph".into(),
+                    content: Some(vec![ProseMirrorNode {
+                        node_type: "text".into(),
+                        content: None,
+                        text: Some("visible".into()),
+                        attrs: None,
+                        marks: None,
+                    }]),
+                    text: None,
+                    attrs: None,
+                    marks: None,
+                },
+            ]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "visible");
+    }
+
+    #[test]
+    fn test_nested_structure_heading_then_list() {
+        let doc = ProseMirrorDoc {
+            node_type: "doc".into(),
+            content: Some(vec![
+                ProseMirrorNode {
+                    node_type: "heading".into(),
+                    content: Some(vec![ProseMirrorNode {
+                        node_type: "text".into(),
+                        content: None,
+                        text: Some("Action Items".into()),
+                        attrs: None,
+                        marks: None,
+                    }]),
+                    text: None,
+                    attrs: Some(serde_json::json!({"level": 2})),
+                    marks: None,
+                },
+                ProseMirrorNode {
+                    node_type: "bulletList".into(),
+                    content: Some(vec![
+                        ProseMirrorNode {
+                            node_type: "listItem".into(),
+                            content: Some(vec![ProseMirrorNode {
+                                node_type: "paragraph".into(),
+                                content: Some(vec![ProseMirrorNode {
+                                    node_type: "text".into(),
+                                    content: None,
+                                    text: Some("Do the thing".into()),
+                                    attrs: None,
+                                    marks: None,
+                                }]),
+                                text: None,
+                                attrs: None,
+                                marks: None,
+                            }]),
+                            text: None,
+                            attrs: None,
+                            marks: None,
+                        },
+                        ProseMirrorNode {
+                            node_type: "listItem".into(),
+                            content: Some(vec![ProseMirrorNode {
+                                node_type: "paragraph".into(),
+                                content: Some(vec![ProseMirrorNode {
+                                    node_type: "text".into(),
+                                    content: None,
+                                    text: Some("Follow up".into()),
+                                    attrs: None,
+                                    marks: None,
+                                }]),
+                                text: None,
+                                attrs: None,
+                                marks: None,
+                            }]),
+                            text: None,
+                            attrs: None,
+                            marks: None,
+                        },
+                    ]),
+                    text: None,
+                    attrs: None,
+                    marks: None,
+                },
+            ]),
+        };
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "## Action Items\n\n- Do the thing\n- Follow up");
+    }
+
+    #[test]
+    fn test_prosemirror_from_json_roundtrip() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "heading",
+                    "attrs": {"level": 1},
+                    "content": [{"type": "text", "text": "Notes"}]
+                },
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {"type": "text", "text": "Plain "},
+                        {"type": "text", "text": "bold", "marks": [{"type": "bold"}]},
+                        {"type": "text", "text": " end"}
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        let md = prosemirror_to_markdown(&doc);
+        assert_eq!(md, "# Notes\n\nPlain **bold** end");
     }
 }

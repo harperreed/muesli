@@ -12,6 +12,8 @@ pub struct DocumentSummary {
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_viewed_panel: Option<ProseMirrorDoc>,
 }
 
 #[cfg(test)]
@@ -249,6 +251,37 @@ mod metadata_tests {
     }
 }
 
+/// ProseMirror document root node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProseMirrorDoc {
+    #[serde(rename = "type")]
+    pub node_type: String,
+    #[serde(default)]
+    pub content: Option<Vec<ProseMirrorNode>>,
+}
+
+/// ProseMirror content node (paragraph, heading, text, list, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProseMirrorNode {
+    #[serde(rename = "type")]
+    pub node_type: String,
+    #[serde(default)]
+    pub content: Option<Vec<ProseMirrorNode>>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub attrs: Option<serde_json::Value>,
+    #[serde(default)]
+    pub marks: Option<Vec<ProseMirrorMark>>,
+}
+
+/// ProseMirror inline mark (bold, italic, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProseMirrorMark {
+    #[serde(rename = "type")]
+    pub mark_type: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RawTranscript {
@@ -445,5 +478,196 @@ generator: muesli 1.0
         assert_eq!(parsed.doc_id, "doc123");
         assert!(parsed.creator.is_none());
         assert!(parsed.attendees.is_none());
+    }
+}
+
+#[cfg(test)]
+mod prosemirror_tests {
+    use super::*;
+
+    #[test]
+    fn test_prosemirror_paragraph() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {"type": "text", "text": "Hello world"}
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.node_type, "doc");
+        let content = doc.content.as_ref().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0].node_type, "paragraph");
+        let para_content = content[0].content.as_ref().unwrap();
+        assert_eq!(para_content[0].text.as_deref(), Some("Hello world"));
+    }
+
+    #[test]
+    fn test_prosemirror_heading() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "heading",
+                    "attrs": {"level": 2},
+                    "content": [
+                        {"type": "text", "text": "My Heading"}
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        let content = doc.content.as_ref().unwrap();
+        assert_eq!(content[0].node_type, "heading");
+        let level = content[0].attrs.as_ref().unwrap()["level"]
+            .as_u64()
+            .unwrap();
+        assert_eq!(level, 2);
+        let heading_content = content[0].content.as_ref().unwrap();
+        assert_eq!(heading_content[0].text.as_deref(), Some("My Heading"));
+    }
+
+    #[test]
+    fn test_prosemirror_bullet_list() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "bulletList",
+                    "content": [
+                        {
+                            "type": "listItem",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [
+                                        {"type": "text", "text": "Item one"}
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "type": "listItem",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [
+                                        {"type": "text", "text": "Item two"}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        let content = doc.content.as_ref().unwrap();
+        assert_eq!(content[0].node_type, "bulletList");
+        let items = content[0].content.as_ref().unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].node_type, "listItem");
+    }
+
+    #[test]
+    fn test_prosemirror_marks_bold_italic() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {"type": "text", "text": "bold text", "marks": [{"type": "bold"}]},
+                        {"type": "text", "text": " and "},
+                        {"type": "text", "text": "italic text", "marks": [{"type": "italic"}]}
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        let content = doc.content.as_ref().unwrap();
+        let para_content = content[0].content.as_ref().unwrap();
+
+        // Bold text node
+        let bold_node = &para_content[0];
+        assert_eq!(bold_node.text.as_deref(), Some("bold text"));
+        let marks = bold_node.marks.as_ref().unwrap();
+        assert_eq!(marks[0].mark_type, "bold");
+
+        // Plain text node
+        let plain_node = &para_content[1];
+        assert_eq!(plain_node.text.as_deref(), Some(" and "));
+        assert!(plain_node.marks.is_none());
+
+        // Italic text node
+        let italic_node = &para_content[2];
+        assert_eq!(italic_node.text.as_deref(), Some("italic text"));
+        let marks = italic_node.marks.as_ref().unwrap();
+        assert_eq!(marks[0].mark_type, "italic");
+    }
+
+    #[test]
+    fn test_prosemirror_empty_doc() {
+        let json = r#"{"type": "doc"}"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.node_type, "doc");
+        assert!(doc.content.is_none());
+    }
+
+    #[test]
+    fn test_prosemirror_unknown_node_types() {
+        let json = r#"{
+            "type": "doc",
+            "content": [
+                {
+                    "type": "customWidget",
+                    "attrs": {"widgetId": "abc123"},
+                    "content": [
+                        {"type": "text", "text": "inside widget"}
+                    ]
+                }
+            ]
+        }"#;
+        let doc: ProseMirrorDoc = serde_json::from_str(json).unwrap();
+        let content = doc.content.as_ref().unwrap();
+        assert_eq!(content[0].node_type, "customWidget");
+        assert!(content[0].attrs.is_some());
+    }
+
+    #[test]
+    fn test_document_summary_with_last_viewed_panel() {
+        let json = r#"{
+            "id": "doc123",
+            "created_at": "2025-10-28T15:04:05Z",
+            "last_viewed_panel": {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "User notes here"}
+                        ]
+                    }
+                ]
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.id, "doc123");
+        let panel = doc.last_viewed_panel.as_ref().unwrap();
+        assert_eq!(panel.node_type, "doc");
+        let content = panel.content.as_ref().unwrap();
+        assert_eq!(content.len(), 1);
+    }
+
+    #[test]
+    fn test_document_summary_without_last_viewed_panel() {
+        let json = r#"{"id": "doc123", "created_at": "2025-10-28T15:04:05Z"}"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.last_viewed_panel.is_none());
     }
 }
