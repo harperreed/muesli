@@ -344,6 +344,39 @@ mod tests {
     }
 
     #[test]
+    fn test_pagination_dedup_guard() {
+        // Exercises the same HashSet-based dedup logic used in
+        // list_documents_with_notes() to break out of pagination when the
+        // API ignores limit/offset and returns duplicate document IDs.
+        let mut seen_ids = HashSet::new();
+
+        // First batch: all new IDs — should continue paginating
+        let batch1 = vec!["doc1", "doc2", "doc3"];
+        let new_count: usize = batch1
+            .iter()
+            .filter(|id| seen_ids.insert(id.to_string()))
+            .count();
+        assert_eq!(new_count, 3, "all docs should be new");
+        assert!(new_count > 0, "should continue paginating");
+
+        // Second batch: all duplicates — should trigger break
+        let batch2 = vec!["doc1", "doc2", "doc3"];
+        let new_count: usize = batch2
+            .iter()
+            .filter(|id| seen_ids.insert(id.to_string()))
+            .count();
+        assert_eq!(new_count, 0, "no new docs — should break");
+
+        // Mixed batch: some new, some old — should continue
+        let batch3 = vec!["doc1", "doc4"];
+        let new_count: usize = batch3
+            .iter()
+            .filter(|id| seen_ids.insert(id.to_string()))
+            .count();
+        assert_eq!(new_count, 1, "one new doc — should continue");
+    }
+
+    #[test]
     fn test_list_documents_with_notes_method_exists() {
         // Verify the method exists and has the right return type signature.
         // It will fail at the network level, not at construction.

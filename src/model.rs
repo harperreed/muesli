@@ -24,18 +24,26 @@ pub struct DocumentSummary {
 
 impl DocumentSummary {
     /// Extract user notes from the `notes` field.
-    /// Falls back to `last_viewed_panel.content` when `notes` is present but
-    /// malformed (e.g. ProseMirror `content` is a map instead of an array).
+    /// Falls back to `last_viewed_panel.content` only when `notes` is present
+    /// but malformed (e.g. ProseMirror `content` is a map instead of an array).
+    /// When `notes` is absent, returns `None` — the LVP may be an AI summary
+    /// panel and should not be misclassified as user notes.
     pub fn user_notes(&self) -> Option<ProseMirrorDoc> {
-        self.notes
-            .as_ref()
-            .and_then(|v| serde_json::from_value::<ProseMirrorDoc>(v.clone()).ok())
-            .or_else(|| {
+        match &self.notes {
+            Some(v) => {
+                let parsed = serde_json::from_value::<ProseMirrorDoc>(v.clone()).ok();
+                if parsed.is_some() {
+                    return parsed;
+                }
+                // notes present but malformed; fall back to LVP content
                 self.last_viewed_panel
                     .as_ref()
-                    .and_then(|v| v.get("content"))
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-            })
+                    .and_then(|panel| panel.get("content"))
+                    .and_then(|c| serde_json::from_value(c.clone()).ok())
+            }
+            // notes absent; do NOT fall back to LVP (it may be an AI summary)
+            None => None,
+        }
     }
 
     /// Extract AI-generated summary from `last_viewed_panel.content`.
@@ -938,6 +946,30 @@ mod prosemirror_tests {
         }"#;
         let doc: DocumentSummary = serde_json::from_str(json).unwrap();
         assert!(doc.user_notes().is_none());
+    }
+
+    #[test]
+    fn test_user_notes_none_when_notes_absent_but_lvp_exists() {
+        // When notes is absent (not present at all), user_notes() should NOT
+        // fall back to last_viewed_panel — it may be an AI summary panel.
+        let json = r#"{
+            "id": "doc-no-notes",
+            "created_at": "2025-10-28T15:04:05Z",
+            "last_viewed_panel": {
+                "title": "Summary",
+                "content": {
+                    "type": "doc",
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": "AI summary"}]}]
+                }
+            }
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert!(doc.notes.is_none());
+        assert!(doc.last_viewed_panel.is_some());
+        // user_notes() should return None since notes is absent
+        assert!(doc.user_notes().is_none());
+        // enhanced_notes() should still work
+        assert!(doc.enhanced_notes().is_some());
     }
 
     #[test]
