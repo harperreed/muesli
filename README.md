@@ -73,9 +73,9 @@ cargo build --release --all-features
 ## Quick Start
 
 ```bash
-# 1. Set your Granola API token
-export GRANOLA_TOKEN="your-token-here"
-# Or let muesli read from ~/.granola/supabase.json
+# 1. If Granola is installed on macOS, muesli picks up your token automatically.
+#    Otherwise, set it manually:
+export BEARER_TOKEN="your-token-here"
 
 # 2. Sync your transcripts
 muesli sync
@@ -192,6 +192,50 @@ muesli mcp
 
 Configure in your AI assistant's MCP settings to enable transcript search and retrieval.
 
+### Open Data Directory
+
+```bash
+# Open the muesli data directory in your file browser
+muesli open
+```
+
+### Fix File Dates
+
+```bash
+# Set file modification times to match meeting creation dates
+muesli fix-dates
+```
+
+### Meeting Statistics
+
+```bash
+# Show statistics from the local meeting database
+muesli stats
+```
+
+### Query Meetings
+
+```bash
+# Query meetings by attendee
+muesli query --attendee "Alice"
+
+# Query meetings by label
+muesli query --label "Planning"
+
+# Search by title
+muesli query --title "standup"
+
+# Limit results
+muesli query --attendee "Bob" -n 5
+```
+
+### Interactive Dashboard
+
+```bash
+# Launch the terminal UI
+muesli tui
+```
+
 ## Feature Flags
 
 All features are enabled by default. If you need a smaller binary, you can disable features:
@@ -202,6 +246,8 @@ All features are enabled by default. If you need a smaller binary, you can disab
 | `embeddings` | Semantic search (ONNX, e5-small-v2) |
 | `summaries` | AI summaries (OpenAI) |
 | `mcp` | MCP server for AI assistant integration |
+| `storage` | DuckDB-backed meeting database for stats and queries |
+| `tui` | Interactive terminal dashboard (requires `storage`) |
 
 ### Building with Specific Features
 
@@ -226,11 +272,13 @@ cargo build --release --no-default-features --features summaries
 
 ### Authentication
 
-Muesli looks for your Granola API token in this order:
+If you have the Granola desktop app installed on macOS, muesli picks up your token automatically — no configuration needed. Otherwise, you can provide a token explicitly.
 
-1. `--token` flag
-2. `GRANOLA_TOKEN` environment variable
-3. `~/.granola/supabase.json` (Granola desktop app location)
+Muesli checks for credentials in this order:
+
+1. `--token` flag (explicit override)
+2. `BEARER_TOKEN` environment variable
+3. `~/Library/Application Support/Granola/supabase.json` (auto-detected from Granola desktop app)
 
 ### Data Directory
 
@@ -242,7 +290,7 @@ muesli sync --data-dir /custom/path
 
 ### API Throttling
 
-By default, muesli throttles API requests (500-1000ms between calls) to be respectful to the Granola API.
+By default, muesli throttles API requests (100-300ms between calls) to be respectful to the Granola API.
 
 ```bash
 # Disable throttling (not recommended)
@@ -282,7 +330,7 @@ muesli sync --throttle-ms 200:400
 
 ### Prerequisites
 
-- Rust 1.70+ (install via [rustup](https://rustup.rs))
+- Rust 1.86+ (install via [rustup](https://rustup.rs))
 - Granola API access
 
 ### Setup
@@ -320,17 +368,27 @@ muesli/
 │   ├── error.rs         # Error types
 │   ├── lib.rs           # Library exports
 │   ├── main.rs          # Binary entry point
+│   ├── mcp.rs           # MCP server implementation
 │   ├── model.rs         # Data structures
 │   ├── storage.rs       # File I/O and paths
+│   ├── summary.rs       # OpenAI integration
 │   ├── sync.rs          # Sync orchestration
 │   ├── util.rs          # Helpers
-│   ├── index/
-│   │   └── text.rs      # Tantivy full-text search
+│   ├── db/
+│   │   ├── connection.rs # DuckDB connection management
+│   │   ├── queries.rs    # Meeting queries (attendee, label, title)
+│   │   └── schema.rs     # Database schema definitions
 │   ├── embeddings/
 │   │   ├── downloader.rs # Model download
 │   │   ├── engine.rs    # ONNX embedding generation
 │   │   └── vector.rs    # Vector store and search
-│   └── summary.rs       # OpenAI integration
+│   ├── index/
+│   │   └── text.rs      # Tantivy full-text search
+│   └── tui/
+│       ├── app.rs       # TUI application state
+│       ├── events.rs    # Keyboard/event handling
+│       ├── run.rs       # TUI main loop
+│       └── ui.rs        # Terminal UI rendering
 ├── tests/
 │   ├── api_integration.rs      # API mocking tests
 │   └── workflow_integration.rs # End-to-end tests
@@ -366,17 +424,13 @@ cargo test --all-features
 
 ## Binary Size
 
-| Build Type | Size | Configuration |
-|------------|------|---------------|
-| Debug | 120MB | Default dev build |
-| Release (default) | 34MB | `cargo build --release` |
-| Release (optimized) | 21MB | LTO + strip (current) |
-
-Optimizations applied:
+Binary sizes vary by platform and feature set. The release profile applies these optimizations:
 - Link Time Optimization (LTO)
 - Size-optimized (`opt-level = "z"`)
 - Debug symbols stripped
 - Panic abort (no unwinding)
+
+Run `cargo build --release --all-features` and check `target/release/muesli` for your actual size.
 
 ## Troubleshooting
 

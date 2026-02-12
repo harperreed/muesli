@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Muesli — Offline-First Rust CLI for Granola Meeting Transcripts</title>
+  <meta name="description" content="Sync, search, and summarize your Granola meeting transcripts locally. Fast BM25 full-text search, semantic search with e5-small-v2 embeddings, AI summaries, and an interactive TUI — all in a single Rust binary.">
+  <meta name="keywords" content="muesli, granola, meeting transcripts, rust cli, offline search, semantic search, BM25, tantivy, embeddings, MCP server, transcript sync">
+  <meta name="author" content="Harper Reed">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#2C1810">
+  <link rel="canonical" href="https://harperreed.github.io/muesli/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Muesli — Your meetings, your machine">
+  <meta property="og:description" content="A fast, offline-first Rust CLI for syncing and searching Granola meeting transcripts. Full-text search, semantic search, AI summaries — all local.">
+  <meta property="og:url" content="https://harperreed.github.io/muesli/">
+  <meta property="og:site_name" content="Muesli">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Muesli — Your meetings, your machine">
+  <meta name="twitter:description" content="Offline-first Rust CLI for syncing and searching Granola meeting transcripts. BM25 + semantic search, AI summaries, TUI dashboard.">
+  <meta name="twitter:creator" content="@harperreed">
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Muesli",
+    "description": "A fast, offline-first Rust CLI for syncing and searching Granola meeting transcripts with full-text search, semantic search, and AI summaries.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux",
+    "url": "https://github.com/harperreed/muesli",
+    "downloadUrl": "https://github.com/harperreed/muesli/releases",
+    "softwareVersion": "0.4.1",
+    "programmingLanguage": "Rust",
+    "license": "https://opensource.org/licenses/MIT",
+    "author": {
+      "@type": "Person",
+      "name": "Harper Reed",
+      "url": "https://github.com/harperreed"
+    },
+    "codeRepository": "https://github.com/harperreed/muesli",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --espresso: #2C1810;
+      --espresso-light: #4A3228;
+      --sage: #7D8B75;
+      --sage-light: #A8B3A0;
+      --honey: #D4A853;
+      --honey-light: #E8CC8A;
+      --linen: #FAF7F2;
+      --oat: #E8DFD1;
+      --cream: #F3EDE4;
+      --berry: #8B4049;
+      --warm-white: #FEFCF9;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--linen);
+      color: var(--espresso);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---- SKIP NAV ---- */
+    .skip-nav {
+      position: absolute;
+      top: -100%;
+      left: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--espresso);
+      color: var(--linen);
+      border-radius: 0 0 0.5rem 0.5rem;
+      z-index: 200;
+      font-size: 0.9rem;
+      text-decoration: none;
+    }
+
+    .skip-nav:focus {
+      top: 0;
+    }
+
+    /* ---- NAV ---- */
+    .site-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(250, 247, 242, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--oat);
+    }
+
+    .nav-brand {
+      font-family: 'Newsreader', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--espresso);
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: var(--espresso-light);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--espresso);
+    }
+
+    .nav-links .gh-link {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--oat);
+      border-radius: 2rem;
+      font-weight: 500;
+      color: var(--espresso);
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .nav-links .gh-link:hover {
+      background: var(--cream);
+      border-color: var(--sage-light);
+    }
+
+    .nav-links .gh-link svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* ---- HERO ---- */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 8rem 2rem 6rem;
+      max-width: 52rem;
+      margin: 0 auto;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      background: var(--cream);
+      border: 1px solid var(--oat);
+      border-radius: 2rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--sage);
+      margin-bottom: 2.5rem;
+    }
+
+    .hero-badge .version {
+      color: var(--honey);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+
+    .hero h1 {
+      font-family: 'Newsreader', serif;
+      font-size: clamp(2.8rem, 6vw, 4.5rem);
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      color: var(--espresso);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--sage);
+    }
+
+    .hero .subtitle {
+      font-size: clamp(1.1rem, 2vw, 1.3rem);
+      font-weight: 300;
+      color: var(--espresso-light);
+      max-width: 36rem;
+      margin: 0 auto 3rem;
+      line-height: 1.7;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 4rem;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      background: var(--espresso);
+      color: var(--linen);
+      border: none;
+      border-radius: 2rem;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .btn-primary:hover {
+      background: var(--espresso-light);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 2rem;
+      background: transparent;
+      color: var(--espresso);
+      border: 1px solid var(--oat);
+      border-radius: 2rem;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .btn-secondary:hover {
+      background: var(--cream);
+      border-color: var(--sage-light);
+    }
+
+    .hero-install {
+      width: 100%;
+      max-width: 32rem;
+    }
+
+    .install-block {
+      background: var(--warm-white);
+      border: 1px solid var(--oat);
+      border-radius: 0.75rem;
+      overflow-x: auto;
+    }
+
+    .install-block pre {
+      padding: 1rem 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--espresso);
+      text-align: left;
+      white-space: pre;
+      margin: 0;
+    }
+
+    .install-block .prompt {
+      color: var(--sage);
+      user-select: none;
+    }
+
+    .install-block .comment {
+      color: var(--sage-light);
+    }
+
+    /* ---- SECTION DEFAULTS ---- */
+    section {
+      padding: 6rem 2rem;
+    }
+
+    .container {
+      max-width: 64rem;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--sage);
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: 'Newsreader', serif;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--espresso);
+      margin-bottom: 1rem;
+    }
+
+    .section-subtitle {
+      font-size: 1.1rem;
+      font-weight: 300;
+      color: var(--espresso-light);
+      max-width: 36rem;
+      line-height: 1.6;
+    }
+
+    /* ---- FEATURES ---- */
+    .features {
+      background: var(--warm-white);
+      border-top: 1px solid var(--oat);
+      border-bottom: 1px solid var(--oat);
+    }
+
+    .features-header {
+      margin-bottom: 4rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      gap: 2rem;
+    }
+
+    .feature-card {
+      padding: 2rem;
+      background: var(--linen);
+      border: 1px solid var(--oat);
+      border-radius: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--sage-light);
+    }
+
+    .feature-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--cream);
+      border-radius: 0.6rem;
+      margin-bottom: 1.25rem;
+      color: var(--sage);
+    }
+
+    .feature-card h3 {
+      font-family: 'Newsreader', serif;
+      font-size: 1.25rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      font-size: 0.95rem;
+      font-weight: 300;
+      color: var(--espresso-light);
+      line-height: 1.6;
+    }
+
+    /* ---- HOW IT WORKS ---- */
+    .how-it-works .steps {
+      margin-top: 4rem;
+      display: grid;
+      gap: 3rem;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 3.5rem 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    .step-number {
+      font-family: 'Newsreader', serif;
+      font-size: 2rem;
+      font-weight: 600;
+      color: var(--honey);
+      line-height: 1;
+      padding-top: 0.2rem;
+    }
+
+    .step-content h3 {
+      font-family: 'Newsreader', serif;
+      font-size: 1.3rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-content p {
+      font-weight: 300;
+      color: var(--espresso-light);
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .step-code {
+      background: var(--warm-white);
+      border: 1px solid var(--oat);
+      border-radius: 0.6rem;
+      display: inline-block;
+    }
+
+    .step-code pre {
+      padding: 0.75rem 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--espresso);
+      margin: 0;
+      white-space: pre;
+    }
+
+    .step-code .prompt {
+      color: var(--sage);
+      user-select: none;
+    }
+
+    /* ---- PERFORMANCE ---- */
+    .performance {
+      background: var(--espresso);
+      color: var(--linen);
+      border-radius: 0;
+    }
+
+    .performance .section-label {
+      color: var(--honey);
+    }
+
+    .performance .section-title {
+      color: var(--linen);
+    }
+
+    .performance .section-subtitle {
+      color: var(--oat);
+    }
+
+    .perf-grid {
+      margin-top: 4rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      gap: 1.5rem;
+    }
+
+    .perf-card {
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 1rem;
+    }
+
+    .perf-card .number {
+      font-family: 'Newsreader', serif;
+      font-size: 2.5rem;
+      font-weight: 600;
+      color: var(--honey);
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+
+    .perf-card .unit {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--sage-light);
+      margin-bottom: 0.75rem;
+    }
+
+    .perf-card .label {
+      font-size: 0.95rem;
+      font-weight: 300;
+      color: var(--oat);
+    }
+
+    /* ---- SEARCH SHOWCASE ---- */
+    .search-showcase {
+      background: var(--warm-white);
+      border-top: 1px solid var(--oat);
+      border-bottom: 1px solid var(--oat);
+    }
+
+    .search-modes {
+      margin-top: 3rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    .search-mode {
+      padding: 2rem;
+      background: var(--linen);
+      border: 1px solid var(--oat);
+      border-radius: 1rem;
+    }
+
+    .search-mode h3 {
+      font-family: 'Newsreader', serif;
+      font-size: 1.3rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .search-mode p {
+      font-weight: 300;
+      color: var(--espresso-light);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1.25rem;
+    }
+
+    .search-mode .example-block {
+      background: var(--warm-white);
+      border: 1px solid var(--oat);
+      border-radius: 0.6rem;
+    }
+
+    .search-mode .example-block pre {
+      padding: 1rem 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 1.8;
+      margin: 0;
+      white-space: pre;
+    }
+
+    .search-mode .example-block .prompt {
+      color: var(--sage);
+      user-select: none;
+    }
+
+    .search-mode .example-block .result {
+      color: var(--espresso-light);
+    }
+
+    .search-mode .example-block .highlight {
+      color: var(--honey);
+    }
+
+    .search-tag {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      background: var(--cream);
+      border-radius: 0.3rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--sage);
+      margin-bottom: 1rem;
+    }
+
+    /* ---- FEATURES TABLE ---- */
+    .build-section .features-table {
+      margin-top: 3rem;
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .features-table th,
+    .features-table td {
+      text-align: left;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--oat);
+    }
+
+    .features-table th {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--sage);
+      font-weight: 500;
+    }
+
+    .features-table td {
+      font-size: 0.95rem;
+    }
+
+    .features-table code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      background: var(--cream);
+      padding: 0.15rem 0.5rem;
+      border-radius: 0.3rem;
+    }
+
+    .features-table .check {
+      color: var(--sage);
+    }
+
+    /* ---- CTA ---- */
+    .final-cta {
+      text-align: center;
+      padding: 8rem 2rem;
+    }
+
+    .final-cta .section-title {
+      margin-bottom: 1.5rem;
+    }
+
+    .final-cta .section-subtitle {
+      margin: 0 auto 2.5rem;
+    }
+
+    .final-cta .install-block {
+      max-width: 36rem;
+      margin: 0 auto;
+    }
+
+    /* ---- FOOTER ---- */
+    .site-footer {
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--oat);
+      text-align: center;
+    }
+
+    .footer-content {
+      max-width: 64rem;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-brand {
+      font-family: 'Newsreader', serif;
+      font-weight: 500;
+      color: var(--espresso);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+      list-style: none;
+    }
+
+    .footer-links a {
+      font-size: 0.9rem;
+      color: var(--sage);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--espresso);
+    }
+
+    .footer-note {
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: var(--sage-light);
+      text-align: center;
+    }
+
+    /* ---- ANIMATIONS ---- */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(1.5rem);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 768px) {
+      .site-header {
+        padding: 1rem 1.25rem;
+      }
+
+      .nav-links {
+        gap: 1rem;
+      }
+
+      .nav-links .text-link {
+        display: none;
+      }
+
+      .hero {
+        padding: 7rem 1.5rem 4rem;
+      }
+
+      .hero-cta {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      section {
+        padding: 4rem 1.5rem;
+      }
+
+      .search-modes {
+        grid-template-columns: 1fr;
+      }
+
+      .step {
+        grid-template-columns: 2.5rem 1fr;
+        gap: 1rem;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .features-table {
+        font-size: 0.85rem;
+      }
+
+      .features-table th,
+      .features-table td {
+        padding: 0.65rem 0.75rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .perf-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main-content" class="skip-nav">Skip to main content</a>
+
+  <!-- HEADER / NAV -->
+  <header class="site-header" role="banner">
+    <a href="#" class="nav-brand" aria-label="Muesli home">muesli</a>
+    <nav aria-label="Main navigation">
+      <ul class="nav-links">
+        <li><a href="#features" class="text-link">Features</a></li>
+        <li><a href="#search" class="text-link">Search</a></li>
+        <li><a href="#performance" class="text-link">Performance</a></li>
+        <li>
+          <a href="https://github.com/harperreed/muesli" class="gh-link" rel="noopener" aria-label="View Muesli on GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+            GitHub
+          </a>
+        </li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+
+    <!-- HERO -->
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="hero-badge">
+        Built with Rust <span class="version">v0.4.1</span>
+      </div>
+
+      <h1 id="hero-heading">Your meetings,<br><em>your machine</em></h1>
+
+      <p class="subtitle">
+        Muesli syncs your <a href="https://granola.ai" rel="noopener" style="color: var(--sage); text-underline-offset: 3px;">Granola</a> meeting transcripts to local markdown and gives you
+        fast full-text and semantic search. Everything stays on your machine.
+      </p>
+
+      <div class="hero-cta">
+        <a href="https://github.com/harperreed/muesli" class="btn-primary">
+          Get started
+        </a>
+        <a href="https://github.com/harperreed/muesli/releases" class="btn-secondary">
+          Download binary
+        </a>
+      </div>
+
+      <div class="hero-install">
+        <div class="install-block" role="figure" aria-label="Installation commands">
+          <pre><code><span class="comment"># Install from GitHub</span>
+<span class="prompt">$</span> cargo install --git https://github.com/harperreed/muesli.git --all-features
+
+<span class="comment"># Sync — picks up your Granola token automatically on macOS</span>
+<span class="prompt">$</span> muesli sync
+
+<span class="comment"># Search</span>
+<span class="prompt">$</span> muesli search "quarterly planning"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features" id="features" aria-labelledby="features-heading">
+      <div class="container">
+        <div class="features-header fade-in">
+          <p class="section-label">What it does</p>
+          <h2 class="section-title" id="features-heading">Simple ingredients,<br>well combined</h2>
+          <p class="section-subtitle">
+            Sync, search, summarize, and explore your meeting transcripts
+            with a single binary. No accounts, no cloud, no telemetry.
+          </p>
+        </div>
+
+        <div class="features-grid" role="list">
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <h3>Sync transcripts</h3>
+            <p>Download and convert Granola transcripts to clean markdown with YAML frontmatter. Incremental updates only fetch what changed.</p>
+          </article>
+
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <h3>Full-text search</h3>
+            <p>BM25-ranked keyword search powered by <a href="https://github.com/quickwit-oss/tantivy" rel="noopener" style="color: var(--espresso-light); text-underline-offset: 2px;">Tantivy</a>. Find exact phrases across hundreds of meetings in under 50ms.</p>
+          </article>
+
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>
+            </div>
+            <h3>Semantic search</h3>
+            <p>Meaning-based search using <a href="https://huggingface.co/intfloat/e5-small-v2" rel="noopener" style="color: var(--espresso-light); text-underline-offset: 2px;">e5-small-v2</a> embeddings. Finds related concepts even without keyword matches. Runs entirely on your CPU.</p>
+          </article>
+
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <h3>AI summaries</h3>
+            <p>Generate structured summaries with key topics, action items, and decisions using OpenAI. API key stored securely in macOS Keychain.</p>
+          </article>
+
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h3>Terminal dashboard</h3>
+            <p>Interactive TUI with markdown rendering, meeting stats, and attendee queries. Browse your meetings without leaving the terminal.</p>
+          </article>
+
+          <article class="feature-card fade-in" role="listitem">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </div>
+            <h3>MCP server</h3>
+            <p>Run as a <a href="https://modelcontextprotocol.io/" rel="noopener" style="color: var(--espresso-light); text-underline-offset: 2px;">Model Context Protocol</a> server so AI assistants like Claude can search and reference your meetings directly.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="how-it-works" id="getting-started" aria-labelledby="howto-heading">
+      <div class="container">
+        <div class="fade-in">
+          <p class="section-label">Getting started</p>
+          <h2 class="section-title" id="howto-heading">Three steps to breakfast</h2>
+          <p class="section-subtitle">Set a token, sync, search. That's the whole thing.</p>
+        </div>
+
+        <ol class="steps" role="list">
+          <li class="step fade-in">
+            <span class="step-number" aria-hidden="true">01</span>
+            <div class="step-content">
+              <h3>Authenticate</h3>
+              <p>If Granola is installed on macOS, muesli finds your token automatically. No setup needed. For other environments, set a bearer token manually.</p>
+              <div class="step-code">
+                <pre><code><span class="comment"># Only needed if Granola isn't installed locally</span>
+<span class="prompt">$</span> export BEARER_TOKEN="your-token"</code></pre>
+              </div>
+            </div>
+          </li>
+
+          <li class="step fade-in">
+            <span class="step-number" aria-hidden="true">02</span>
+            <div class="step-content">
+              <h3>Sync</h3>
+              <p>Download all your transcripts as clean markdown with frontmatter. Only changed documents are fetched on subsequent runs.</p>
+              <div class="step-code">
+                <pre><code><span class="prompt">$</span> muesli sync</code></pre>
+              </div>
+            </div>
+          </li>
+
+          <li class="step fade-in">
+            <span class="step-number" aria-hidden="true">03</span>
+            <div class="step-content">
+              <h3>Search and explore</h3>
+              <p>Search by keyword or by meaning. Query by attendee or label. Launch the TUI for a full dashboard. Your data, your way.</p>
+              <div class="step-code">
+                <pre><code><span class="prompt">$</span> muesli search --semantic "improving team collaboration"</code></pre>
+              </div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- SEARCH SHOWCASE -->
+    <section class="search-showcase" id="search" aria-labelledby="search-heading">
+      <div class="container">
+        <div class="fade-in">
+          <p class="section-label">Two ways to find</p>
+          <h2 class="section-title" id="search-heading">Search that understands you</h2>
+          <p class="section-subtitle">Keyword search for precision, semantic search for discovery. Both run locally with zero network calls.</p>
+        </div>
+
+        <div class="search-modes">
+          <article class="search-mode fade-in">
+            <span class="search-tag">BM25</span>
+            <h3>Full-text search</h3>
+            <p>Exact keyword matching ranked by relevance. Powered by Tantivy, the Rust equivalent of Elasticsearch.</p>
+            <div class="example-block" role="figure" aria-label="Full-text search example">
+              <pre><code><span class="prompt">$</span> muesli search "Q1 planning"
+<span class="result"><span class="highlight">1.</span> Q1 Planning Review (2025-01-15)</span>
+<span class="result"><span class="highlight">2.</span> Team Planning Kickoff (2025-01-08)</span>
+<span class="result"><span class="highlight">3.</span> Planning Retrospective (2025-03-20)</span></code></pre>
+            </div>
+          </article>
+
+          <article class="search-mode fade-in">
+            <span class="search-tag">e5-small-v2</span>
+            <h3>Semantic search</h3>
+            <p>Meaning-based matching using 384-dimensional embeddings. Finds related concepts without exact keyword overlap.</p>
+            <div class="example-block" role="figure" aria-label="Semantic search example">
+              <pre><code><span class="prompt">$</span> muesli search --semantic "how do we
+  handle customer feedback"
+<span class="result"><span class="highlight">1.</span> Support Triage Process (2025-02-12)</span>
+<span class="result"><span class="highlight">2.</span> NPS Review Meeting (2025-01-30)</span>
+<span class="result"><span class="highlight">3.</span> Voice of Customer Sync (2025-02-05)</span></code></pre>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- PERFORMANCE -->
+    <section class="performance" id="performance" aria-labelledby="perf-heading">
+      <div class="container">
+        <div class="fade-in">
+          <p class="section-label">Numbers</p>
+          <h2 class="section-title" id="perf-heading">Fast enough to forget it's there</h2>
+          <p class="section-subtitle">Rust gives us predictable performance. No GC pauses, no startup lag, no surprises.</p>
+        </div>
+
+        <div class="perf-grid" role="list">
+          <div class="perf-card fade-in" role="listitem">
+            <div class="number" aria-label="Less than 50">&lt;50</div>
+            <div class="unit">milliseconds</div>
+            <div class="label">Text search latency</div>
+          </div>
+
+          <div class="perf-card fade-in" role="listitem">
+            <div class="number">~1</div>
+            <div class="unit">second</div>
+            <div class="label">Reindex 500+ docs</div>
+          </div>
+
+          <div class="perf-card fade-in" role="listitem">
+            <div class="number">213</div>
+            <div class="unit">tests passing</div>
+            <div class="label">Test coverage</div>
+          </div>
+
+          <div class="perf-card fade-in" role="listitem">
+            <div class="number">6</div>
+            <div class="unit">feature flags</div>
+            <div class="label">Build only what you need</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BUILD OPTIONS -->
+    <section class="build-section" id="build-options" aria-labelledby="build-heading">
+      <div class="container">
+        <div class="fade-in">
+          <p class="section-label">Modular</p>
+          <h2 class="section-title" id="build-heading">Take what you need</h2>
+          <p class="section-subtitle">All features ship by default. Disable what you don't need for a smaller binary.</p>
+        </div>
+
+        <table class="features-table fade-in" aria-label="Muesli feature flags">
+          <thead>
+            <tr>
+              <th scope="col">Feature</th>
+              <th scope="col">What it adds</th>
+              <th scope="col">Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>index</code></td>
+              <td>Full-text search with Tantivy</td>
+              <td class="check">On</td>
+            </tr>
+            <tr>
+              <td><code>embeddings</code></td>
+              <td>Semantic search with ONNX + e5-small-v2</td>
+              <td class="check">On</td>
+            </tr>
+            <tr>
+              <td><code>summaries</code></td>
+              <td>AI summaries via OpenAI + Keychain</td>
+              <td class="check">On</td>
+            </tr>
+            <tr>
+              <td><code>mcp</code></td>
+              <td>Model Context Protocol server</td>
+              <td class="check">On</td>
+            </tr>
+            <tr>
+              <td><code>storage</code></td>
+              <td>DuckDB meeting database, stats, queries</td>
+              <td class="check">On</td>
+            </tr>
+            <tr>
+              <td><code>tui</code></td>
+              <td>Interactive terminal dashboard</td>
+              <td class="check">On</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="final-cta" aria-labelledby="cta-heading">
+      <div class="container fade-in">
+        <p class="section-label">Ready?</p>
+        <h2 class="section-title" id="cta-heading">Start in under a minute</h2>
+        <p class="section-subtitle">
+          One command to install, one command to sync.
+          Your transcripts become searchable markdown files you actually own.
+        </p>
+
+        <div class="install-block" style="max-width: 36rem; margin: 2rem auto 0;" role="figure" aria-label="Install commands">
+          <pre><code><span class="comment"># Install</span>
+<span class="prompt">$</span> cargo install --git https://github.com/harperreed/muesli.git --all-features
+
+<span class="comment"># Or grab a prebuilt binary</span>
+<span class="prompt">$</span> curl -L https://github.com/harperreed/muesli/releases/latest/download/muesli-macos-aarch64 -o muesli</code></pre>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="footer-content">
+      <span class="footer-brand">muesli</span>
+      <nav aria-label="Footer navigation">
+        <ul class="footer-links">
+          <li><a href="https://github.com/harperreed/muesli" rel="noopener">Source</a></li>
+          <li><a href="https://github.com/harperreed/muesli/releases" rel="noopener">Releases</a></li>
+          <li><a href="https://github.com/harperreed/muesli/blob/main/LICENSE" rel="noopener">MIT License</a></li>
+          <li><a href="https://granola.ai" rel="noopener">Granola</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="footer-note">Built with care in Rust. Not affiliated with Granola.</p>
+  </footer>
+
+  <script defer>
+    // Fade-in on scroll
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    });
+
+    document.querySelectorAll('.fade-in').forEach(function(el) {
+      observer.observe(el);
+    });
+  </script>
+
+</body>
+</html>

@@ -1,9 +1,9 @@
 # Muesli Implementation Status
 
-**Date:** November 5, 2025
-**Version:** 0.1.0
-**Total Tests:** 63 passing
-**Binary Size:** 13MB (release, all features)
+**Date:** November 5, 2025 (updated February 2026)
+**Version:** 0.4.1
+**Total Tests:** ~213 passing
+**Binary Size:** Approximate; varies by platform (release, all features)
 
 ## ✅ Milestone 1: Core Sync (COMPLETE)
 
@@ -105,7 +105,7 @@ make build-index
 ### Implemented Features
 
 1. **ONNX Engine** (`src/embeddings/engine.rs`)
-   - Full e5-small-v2 embedding model integration with ort 2.0.0-rc.10
+   - Full e5-small-v2 embedding model integration with ort 2.0.0-rc.11
    - BERT tokenization with proper token_type_ids
    - Mean pooling with attention masks
    - Vector normalization for cosine similarity
@@ -190,21 +190,22 @@ muesli summarize <doc-id>
 
 ---
 
-## 🔴 Milestone 5: Polish (PARTIAL)
+## ✅ Milestone 5: Polish (MOSTLY COMPLETE)
 
-**Status:** In Progress
+**Status:** Production Ready
 
 ### Completed
 - ✅ Makefile with all build targets
 - ✅ Error handling with exit codes
 - ✅ CLI help text
 - ✅ Feature flags properly configured
+- ✅ GitHub Actions CI/CD
+- ✅ README documentation
+- ✅ Binary size optimization (LTO + strip + opt-level=z)
+- ✅ `--reindex` flag for text search
+- ✅ Integration tests
 
 ### TODO
-- ❌ Integration tests
-- ❌ GitHub Actions CI/CD
-- ❌ Binary size optimization
-- ❌ README documentation
 - ❌ Crates.io publishing prep
 
 ---
@@ -212,7 +213,7 @@ muesli summarize <doc-id>
 ## Test Coverage Summary
 
 ```
-Total: 63 tests passing
+Total: ~213 tests passing (194 unit + 8 api_integration + 11 workflow_integration)
 ├── error: 1 test
 ├── model: 6 tests
 ├── auth: 4 tests
@@ -225,7 +226,12 @@ Total: 63 tests passing
 ├── index: 15 tests (--features index)
 ├── embeddings/vector: 8 tests (--features embeddings)
 ├── embeddings/downloader: 2 tests (--features embeddings)
-└── summary: 3 tests (--features summaries)
+├── summary: 3 tests (--features summaries)
+├── db: tests (--features storage)
+├── tui: tests (--features tui)
+├── mcp: tests (--features mcp)
+├── api_integration: 8 tests
+└── workflow_integration: 11 tests
 ```
 
 ---
@@ -234,20 +240,23 @@ Total: 63 tests passing
 
 ```toml
 [features]
-default = []
-index = ["dep:tantivy"]
+default = ["index", "summaries", "embeddings", "mcp", "storage", "tui"]
 summaries = ["dep:keyring", "dep:async-openai", "dep:tokio"]
+index = ["dep:tantivy"]
 embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", "dep:ndarray"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:tokio"]
+storage = ["dep:duckdb"]
+tui = ["dep:ratatui", "dep:crossterm", "dep:tui-markdown", "storage"]
 ```
 
 ### Build Combinations
 
-| Command | Features | Size | Use Case |
-|---------|----------|------|----------|
-| `make build` | Core only | 5.1MB | Basic sync |
-| `make build-index` | + search | 9MB | Sync + search |
-| `make build-summaries` | + AI summaries | 11MB | Sync + summaries |
-| `make build-all` | All features | 13MB | Full functionality |
+| Command | Features | Use Case |
+|---------|----------|----------|
+| `make build` | Core only | Basic sync |
+| `make build-index` | + search | Sync + search |
+| `make build-summaries` | + AI summaries | Sync + summaries |
+| `make build-all` | All features (index, summaries, embeddings, mcp, storage, tui) | Full functionality |
 
 ---
 
@@ -257,22 +266,22 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 
 - **Core Sync** (Milestone 1)
 - **Text Search** (Milestone 2)
-- **Embeddings** (Milestone 3) - NEW!
+- **Embeddings** (Milestone 3)
 - **Summaries** (Milestone 4)
+- **MCP Server**
+- **Storage** (DuckDB)
+- **TUI** (Interactive dashboard)
 
 ### 🚧 Future Enhancements
 
-- **Polish** (Milestone 5) - CI/CD, integration tests, documentation
+- **Crates.io publishing**
 
 ---
 
 ## Known Limitations
 
 1. **Platform Support:** macOS only for keychain (use env vars elsewhere)
-2. **Testing:** No integration tests yet
-3. **CI/CD:** No automated builds
-4. **Documentation:** Missing user guide and API docs
-5. **Text Search Index:** Requires full re-sync to build initially (need --reindex flag)
+2. **Documentation:** Missing user guide and API docs
 
 ---
 
@@ -304,19 +313,16 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 
 ### For Development
 
-1. **Add integration tests** - Test full workflows end-to-end
-2. **Set up CI/CD** - Automated testing and releases
-3. **Add --reindex flag** - Rebuild text index without re-syncing
-4. **Optimize binary size** - Strip symbols, consider UPX
-5. **Write documentation** - README, user guide, API docs
+1. **Write user guide and API docs**
+2. **Publish to crates.io**
 
 ---
 
 ## Conclusion
 
 **Muesli is production-ready for all core functionality:**
-- ✅ 63+ tests passing
-- ✅ Milestones 1, 2, 3, 4 complete
+- ✅ ~213 tests passing
+- ✅ Milestones 1-5 complete (except crates.io publish)
 - ✅ Clean architecture with proper error handling
 - ✅ Feature flags for optional dependencies
 - ✅ TDD approach throughout
@@ -324,14 +330,16 @@ embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", 
 **The project successfully delivers:**
 - Granola transcript sync
 - Full-text search with Tantivy (BM25)
-- Semantic search with e5-small-v2 embeddings (NEW!)
+- Semantic search with e5-small-v2 embeddings
 - AI summaries with OpenAI
+- MCP server for AI assistant integration
+- DuckDB-backed meeting database (stats, queries)
+- Interactive TUI dashboard
 - Clean CLI interface
 - XDG-compliant storage
-
-**Next steps (Milestone 5 - Polish):**
-- Integration tests
 - GitHub Actions CI/CD
-- --reindex flag for text search
 - Binary size optimization
-- User documentation and README
+
+**Next steps:**
+- User documentation and API docs
+- Crates.io publishing

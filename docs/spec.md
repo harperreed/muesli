@@ -1,3 +1,5 @@
+> **Note:** This is the original design specification. The implementation diverges in several areas (e.g., feature flags, auth precedence, default throttle values). See [README.md](../README.md) for current documentation.
+
 # Muesli — Rust Meetings/Transcripts Sync Client
 
 **Scope:** Robust, macOS‑focused Rust rewrite of the Granola meeting/transcripts puller with structured Markdown conversion, optional OpenAI summaries, and optional local full‑text + embedding search.
