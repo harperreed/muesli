@@ -102,6 +102,65 @@ pub struct Attendee {
     pub details: Option<PersonDetails>,
 }
 
+impl Attendee {
+    /// Best-effort display name with fallback chain:
+    /// top-level name -> nested fullName -> email username -> None
+    pub fn display_name(&self) -> Option<String> {
+        // 1. Try top-level name
+        if let Some(ref name) = self.name {
+            if !name.is_empty() {
+                return Some(name.clone());
+            }
+        }
+        // 2. Try nested details.person.name.full_name
+        if let Some(ref details) = self.details {
+            if let Some(ref person) = details.person {
+                if let Some(ref pn) = person.name {
+                    if let Some(ref full) = pn.full_name {
+                        if !full.is_empty() {
+                            return Some(full.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // 3. Fall back to email (just the local part before @)
+        if let Some(ref email) = self.email {
+            if let Some(local) = email.split('@').next() {
+                if !local.is_empty() {
+                    return Some(local.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Heuristic check for non-person attendees (conference rooms, calendars, etc.)
+    pub fn is_person(&self) -> bool {
+        if let Some(ref email) = self.email {
+            let email_lower = email.to_lowercase();
+            if email_lower.contains("resource.calendar")
+                || email_lower.contains("calendar-notification")
+                || email_lower.contains("@resource.")
+                || email_lower.starts_with("room@")
+            {
+                return false;
+            }
+        }
+        // If we have person details, it's a person
+        if self
+            .details
+            .as_ref()
+            .and_then(|d| d.person.as_ref())
+            .is_some()
+        {
+            return true;
+        }
+        // If we have a name (either top-level or display_name), assume person
+        self.display_name().is_some()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonDetails {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -281,6 +340,104 @@ mod metadata_tests {
         }"#;
         let attendee: Attendee = serde_json::from_str(json).unwrap();
         assert_eq!(attendee.name.as_deref(), Some("Alice"));
+    }
+
+    #[test]
+    fn test_display_name_prefers_top_level() {
+        let att = Attendee {
+            name: Some("Alice Smith".into()),
+            email: Some("alice@acme.com".into()),
+            details: Some(PersonDetails {
+                person: Some(PersonInfo {
+                    name: Some(PersonName {
+                        full_name: Some("Alice J. Smith".into()),
+                    }),
+                    employment: None,
+                    linkedin: None,
+                }),
+                company: None,
+            }),
+        };
+        assert_eq!(att.display_name(), Some("Alice Smith".to_string()));
+    }
+
+    #[test]
+    fn test_display_name_falls_back_to_nested() {
+        let att = Attendee {
+            name: None,
+            email: Some("alice@acme.com".into()),
+            details: Some(PersonDetails {
+                person: Some(PersonInfo {
+                    name: Some(PersonName {
+                        full_name: Some("Alice Smith".into()),
+                    }),
+                    employment: None,
+                    linkedin: None,
+                }),
+                company: None,
+            }),
+        };
+        assert_eq!(att.display_name(), Some("Alice Smith".to_string()));
+    }
+
+    #[test]
+    fn test_display_name_falls_back_to_email() {
+        let att = Attendee {
+            name: None,
+            email: Some("alice@acme.com".into()),
+            details: None,
+        };
+        assert_eq!(att.display_name(), Some("alice".to_string()));
+    }
+
+    #[test]
+    fn test_display_name_none_when_empty() {
+        let att = Attendee {
+            name: None,
+            email: None,
+            details: None,
+        };
+        assert_eq!(att.display_name(), None);
+    }
+
+    #[test]
+    fn test_display_name_skips_empty_strings() {
+        let att = Attendee {
+            name: Some("".into()),
+            email: Some("alice@acme.com".into()),
+            details: None,
+        };
+        assert_eq!(att.display_name(), Some("alice".to_string()));
+    }
+
+    #[test]
+    fn test_is_person_true_for_normal_attendee() {
+        let att = Attendee {
+            name: Some("Alice".into()),
+            email: Some("alice@acme.com".into()),
+            details: None,
+        };
+        assert!(att.is_person());
+    }
+
+    #[test]
+    fn test_is_person_false_for_calendar_resource() {
+        let att = Attendee {
+            name: None,
+            email: Some("company@resource.calendar.google.com".into()),
+            details: None,
+        };
+        assert!(!att.is_person());
+    }
+
+    #[test]
+    fn test_is_person_false_for_room() {
+        let att = Attendee {
+            name: None,
+            email: Some("room@company.com".into()),
+            details: None,
+        };
+        assert!(!att.is_person());
     }
 
     #[test]

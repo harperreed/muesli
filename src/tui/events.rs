@@ -1,16 +1,19 @@
 // ABOUTME: Keyboard event handling for the TUI dashboard
-// ABOUTME: Maps key events to app state transitions for Normal, Search, and AttendeeFilter modes
+// ABOUTME: Maps key events to app state transitions for Normal, Search, AttendeeFilter, and Analytics modes
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::app::{App, FocusedPane, Mode};
+use super::app::{AnalyticsTab, App, FocusedPane, Mode, TrendsGranularity, View};
 
 /// Handle a key event and update app state accordingly.
 pub fn handle_key_event(app: &mut App, key: KeyEvent) {
-    match app.mode {
-        Mode::Normal => handle_normal_mode(app, key),
-        Mode::Search => handle_search_mode(app, key),
-        Mode::AttendeeFilter => handle_attendee_filter_mode(app, key),
+    match app.view {
+        View::Meetings => match app.mode {
+            Mode::Normal => handle_normal_mode(app, key),
+            Mode::Search => handle_search_mode(app, key),
+            Mode::AttendeeFilter => handle_attendee_filter_mode(app, key),
+        },
+        View::Analytics => handle_analytics_mode(app, key),
     }
 }
 
@@ -47,6 +50,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             if app.active_attendee_filter.is_some() {
                 app.clear_attendee_filter();
             }
+        }
+        KeyCode::Char('a') => {
+            app.toggle_view();
         }
         KeyCode::Enter => {
             // Open in $EDITOR handled by run.rs
@@ -112,10 +118,58 @@ fn handle_attendee_filter_mode(app: &mut App, key: KeyEvent) {
     }
 }
 
+fn handle_analytics_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') => {
+            app.should_quit = true;
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.should_quit = true;
+        }
+        KeyCode::Esc | KeyCode::Char('a') => {
+            app.view = View::Meetings;
+        }
+        KeyCode::Char('1') => {
+            app.analytics.tab = AnalyticsTab::Dashboard;
+            app.analytics.scroll = 0;
+        }
+        KeyCode::Char('2') => {
+            app.analytics.tab = AnalyticsTab::Trends;
+            app.analytics.scroll = 0;
+        }
+        KeyCode::Right => {
+            app.analytics_next_tab();
+        }
+        KeyCode::Left => {
+            app.analytics_prev_tab();
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.analytics.scroll = app.analytics.scroll.saturating_add(1);
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.analytics.scroll = app.analytics.scroll.saturating_sub(1);
+        }
+        KeyCode::Char('d') if app.analytics.tab == AnalyticsTab::Trends => {
+            app.analytics.granularity = TrendsGranularity::Daily;
+        }
+        KeyCode::Char('w') if app.analytics.tab == AnalyticsTab::Trends => {
+            app.analytics.granularity = TrendsGranularity::Weekly;
+        }
+        KeyCode::Char('m') if app.analytics.tab == AnalyticsTab::Trends => {
+            app.analytics.granularity = TrendsGranularity::Monthly;
+        }
+        KeyCode::Char('r') => {
+            app.analytics.loaded = false;
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::queries::DocumentRow;
+    use crate::tui::app::{AnalyticsTab, TrendsGranularity, View};
     use chrono::Utc;
 
     fn make_app() -> App {
@@ -357,5 +411,100 @@ mod tests {
         handle_key_event(&mut app, key(KeyCode::Char('j')));
         assert_eq!(app.selected, 1);
         assert_eq!(app.preview_scroll, 0); // scroll should not change
+    }
+
+    #[test]
+    fn test_a_toggles_to_analytics() {
+        let mut app = make_app();
+        assert_eq!(app.view, View::Meetings);
+        handle_key_event(&mut app, key(KeyCode::Char('a')));
+        assert_eq!(app.view, View::Analytics);
+    }
+
+    #[test]
+    fn test_a_toggles_back_to_meetings() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Char('a')));
+        assert_eq!(app.view, View::Meetings);
+    }
+
+    #[test]
+    fn test_esc_from_analytics_returns_to_meetings() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.view, View::Meetings);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn test_analytics_tab_switch_with_numbers() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Char('2')));
+        assert_eq!(app.analytics.tab, AnalyticsTab::Trends);
+        handle_key_event(&mut app, key(KeyCode::Char('1')));
+        assert_eq!(app.analytics.tab, AnalyticsTab::Dashboard);
+    }
+
+    #[test]
+    fn test_analytics_tab_switch_with_arrows() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Right));
+        assert_eq!(app.analytics.tab, AnalyticsTab::Trends);
+        handle_key_event(&mut app, key(KeyCode::Left));
+        assert_eq!(app.analytics.tab, AnalyticsTab::Dashboard);
+    }
+
+    #[test]
+    fn test_analytics_scroll() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.analytics.scroll, 1);
+        handle_key_event(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.analytics.scroll, 0);
+    }
+
+    #[test]
+    fn test_analytics_granularity_keys() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        app.analytics.tab = AnalyticsTab::Trends;
+        handle_key_event(&mut app, key(KeyCode::Char('d')));
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Daily);
+        handle_key_event(&mut app, key(KeyCode::Char('w')));
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Weekly);
+        handle_key_event(&mut app, key(KeyCode::Char('m')));
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Monthly);
+    }
+
+    #[test]
+    fn test_granularity_keys_ignored_on_dashboard() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        app.analytics.tab = AnalyticsTab::Dashboard;
+        app.analytics.granularity = TrendsGranularity::Weekly;
+        handle_key_event(&mut app, key(KeyCode::Char('d')));
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Weekly);
+    }
+
+    #[test]
+    fn test_q_quits_from_analytics() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        handle_key_event(&mut app, key(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn test_analytics_refresh_flag() {
+        let mut app = make_app();
+        app.view = View::Analytics;
+        app.analytics.loaded = true;
+        handle_key_event(&mut app, key(KeyCode::Char('r')));
+        assert!(!app.analytics.loaded);
     }
 }

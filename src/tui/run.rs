@@ -14,7 +14,7 @@ use crate::db;
 use crate::storage::Paths;
 use crate::Result;
 
-use super::app::App;
+use super::app::{App, View};
 use super::events::handle_key_event;
 use super::ui;
 
@@ -84,6 +84,11 @@ fn run_loop(
                 && app.mode == super::app::Mode::Normal;
 
             handle_key_event(app, key);
+
+            // Lazy-load analytics data on first switch (or refresh)
+            if app.view == View::Analytics && !app.analytics.loaded {
+                load_analytics(app, conn);
+            }
 
             if app.should_quit {
                 break;
@@ -183,6 +188,46 @@ fn load_preview(app: &mut App, paths: &Paths) {
             }
         }
     }
+}
+
+/// Load analytics data from the database into the app state.
+fn load_analytics(app: &mut App, conn: &duckdb::Connection) {
+    use crate::db::queries;
+
+    app.analytics.stats = queries::get_stats(conn).ok();
+    app.analytics.top_attendees = queries::top_attendees(conn, 10).unwrap_or_default();
+    app.analytics.labels = queries::label_distribution(conn).unwrap_or_default();
+    app.analytics.weekly_counts = queries::meetings_per_week(conn, 12).unwrap_or_default();
+    app.analytics.daily_counts = queries::meetings_per_day(conn, 90).unwrap_or_default();
+    app.analytics.monthly_counts = queries::meetings_per_month(conn, 12).unwrap_or_default();
+    app.analytics.avg_duration = queries::average_duration(conn).unwrap_or(0.0);
+    app.analytics.total_hours = app
+        .analytics
+        .stats
+        .as_ref()
+        .map(|s| s.total_duration_seconds as f64 / 3600.0)
+        .unwrap_or(0.0);
+
+    // Rhythm
+    app.analytics.weekday_counts = queries::meetings_by_weekday(conn).unwrap_or_default();
+    app.analytics.hourly_counts = queries::meetings_by_hour(conn).unwrap_or_default();
+    app.analytics.meeting_size_trend =
+        queries::avg_attendees_by_month(conn, 12).unwrap_or_default();
+
+    // People
+    app.analytics.recent_collaborators =
+        queries::top_collaborators_recent(conn, 30, 10).unwrap_or_default();
+    app.analytics.new_faces = queries::new_attendees_this_month(conn).unwrap_or_default();
+    app.analytics.top_companies = queries::top_companies(conn, 10).unwrap_or_default();
+
+    // Content
+    app.analytics.label_trends = queries::label_trends(conn, 6).unwrap_or_default();
+    app.analytics.busiest_weeks = queries::busiest_weeks(conn, 5).unwrap_or_default();
+
+    // Superlatives
+    app.analytics.superlatives = queries::superlatives(conn).ok();
+
+    app.analytics.loaded = true;
 }
 
 #[cfg(test)]

@@ -5,7 +5,11 @@ use std::borrow::Cow;
 
 use ratatui::text::{Line, Span, Text};
 
-use crate::db::queries::{DocumentRow, Stats};
+use crate::db::queries::{
+    AttendeeFrequency, CompanyFrequency, DailyCount, DayOfWeekCount, DocumentRow, HourOfDayCount,
+    LabelByMonth, LabelFrequency, MeetingSizeByMonth, MonthlyCount, RecentCollaborator, Stats,
+    Superlatives, WeeklyCount,
+};
 
 /// Interaction mode for the TUI.
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +24,85 @@ pub enum Mode {
 pub enum FocusedPane {
     MeetingList,
     Preview,
+}
+
+/// Top-level view for the TUI.
+#[derive(Debug, Clone, PartialEq)]
+pub enum View {
+    Meetings,
+    Analytics,
+}
+
+/// Sub-tab within the Analytics view.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AnalyticsTab {
+    Dashboard,
+    Trends,
+}
+
+/// Time granularity for the Trends tab.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrendsGranularity {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+/// State for the analytics view, including cached query results.
+pub struct AnalyticsState {
+    pub tab: AnalyticsTab,
+    pub granularity: TrendsGranularity,
+    pub scroll: u16,
+    pub loaded: bool,
+    pub stats: Option<Stats>,
+    pub top_attendees: Vec<AttendeeFrequency>,
+    pub labels: Vec<LabelFrequency>,
+    pub weekly_counts: Vec<WeeklyCount>,
+    pub daily_counts: Vec<DailyCount>,
+    pub monthly_counts: Vec<MonthlyCount>,
+    pub avg_duration: f64,
+    pub total_hours: f64,
+    // Rhythm
+    pub weekday_counts: Vec<DayOfWeekCount>,
+    pub hourly_counts: Vec<HourOfDayCount>,
+    pub meeting_size_trend: Vec<MeetingSizeByMonth>,
+    // People
+    pub recent_collaborators: Vec<RecentCollaborator>,
+    pub new_faces: Vec<String>,
+    pub top_companies: Vec<CompanyFrequency>,
+    // Content
+    pub label_trends: Vec<LabelByMonth>,
+    pub busiest_weeks: Vec<WeeklyCount>,
+    // Superlatives
+    pub superlatives: Option<Superlatives>,
+}
+
+impl Default for AnalyticsState {
+    fn default() -> Self {
+        Self {
+            tab: AnalyticsTab::Dashboard,
+            granularity: TrendsGranularity::Weekly,
+            scroll: 0,
+            loaded: false,
+            stats: None,
+            top_attendees: Vec::new(),
+            labels: Vec::new(),
+            weekly_counts: Vec::new(),
+            daily_counts: Vec::new(),
+            monthly_counts: Vec::new(),
+            avg_duration: 0.0,
+            total_hours: 0.0,
+            weekday_counts: Vec::new(),
+            hourly_counts: Vec::new(),
+            meeting_size_trend: Vec::new(),
+            recent_collaborators: Vec::new(),
+            new_faces: Vec::new(),
+            top_companies: Vec::new(),
+            label_trends: Vec::new(),
+            busiest_weeks: Vec::new(),
+            superlatives: None,
+        }
+    }
 }
 
 /// Application state for the TUI dashboard.
@@ -46,6 +129,10 @@ pub struct App {
     pub focused_pane: FocusedPane,
     /// Vertical scroll offset for the preview pane.
     pub preview_scroll: u16,
+    /// Current top-level view (Meetings or Analytics).
+    pub view: View,
+    /// Cached state for the analytics view.
+    pub analytics: AnalyticsState,
 }
 
 /// Convert a `Text<'_>` to `Text<'static>` by making all `Cow` string data owned.
@@ -96,6 +183,8 @@ impl App {
             attendee_filter_changed: false,
             focused_pane: FocusedPane::MeetingList,
             preview_scroll: 0,
+            view: View::Meetings,
+            analytics: AnalyticsState::default(),
         }
     }
 
@@ -237,6 +326,28 @@ impl App {
             .preview_content
             .as_deref()
             .map(|s| text_to_static(tui_markdown::from_str(s)));
+    }
+
+    /// Toggle between Meetings and Analytics views.
+    pub fn toggle_view(&mut self) {
+        self.view = match self.view {
+            View::Meetings => View::Analytics,
+            View::Analytics => View::Meetings,
+        };
+    }
+
+    /// Switch to the next analytics sub-tab.
+    pub fn analytics_next_tab(&mut self) {
+        self.analytics.tab = match self.analytics.tab {
+            AnalyticsTab::Dashboard => AnalyticsTab::Trends,
+            AnalyticsTab::Trends => AnalyticsTab::Dashboard,
+        };
+        self.analytics.scroll = 0;
+    }
+
+    /// Switch to the previous analytics sub-tab.
+    pub fn analytics_prev_tab(&mut self) {
+        self.analytics_next_tab();
     }
 
     /// Move selection to the previous attendee in the filtered list.
@@ -515,6 +626,73 @@ mod tests {
         app.preview_content = None;
         app.parse_preview();
         assert!(app.preview_parsed.is_none());
+    }
+
+    #[test]
+    fn test_default_view_is_meetings() {
+        let app = App::new(vec![], None, vec![]);
+        assert_eq!(app.view, View::Meetings);
+    }
+
+    #[test]
+    fn test_toggle_view() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert_eq!(app.view, View::Meetings);
+        app.toggle_view();
+        assert_eq!(app.view, View::Analytics);
+        app.toggle_view();
+        assert_eq!(app.view, View::Meetings);
+    }
+
+    #[test]
+    fn test_analytics_tab_switch() {
+        let mut app = App::new(vec![], None, vec![]);
+        app.toggle_view();
+        assert_eq!(app.analytics.tab, AnalyticsTab::Dashboard);
+        app.analytics_next_tab();
+        assert_eq!(app.analytics.tab, AnalyticsTab::Trends);
+        app.analytics_next_tab();
+        assert_eq!(app.analytics.tab, AnalyticsTab::Dashboard);
+    }
+
+    #[test]
+    fn test_analytics_prev_tab() {
+        let mut app = App::new(vec![], None, vec![]);
+        app.analytics.tab = AnalyticsTab::Dashboard;
+        app.analytics_prev_tab();
+        assert_eq!(app.analytics.tab, AnalyticsTab::Trends);
+        app.analytics_prev_tab();
+        assert_eq!(app.analytics.tab, AnalyticsTab::Dashboard);
+    }
+
+    #[test]
+    fn test_trends_granularity_cycle() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Weekly);
+        app.analytics.granularity = TrendsGranularity::Daily;
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Daily);
+        app.analytics.granularity = TrendsGranularity::Monthly;
+        assert_eq!(app.analytics.granularity, TrendsGranularity::Monthly);
+    }
+
+    #[test]
+    fn test_analytics_scroll() {
+        let mut app = App::new(vec![], None, vec![]);
+        assert_eq!(app.analytics.scroll, 0);
+        app.analytics.scroll = app.analytics.scroll.saturating_add(1);
+        assert_eq!(app.analytics.scroll, 1);
+        app.analytics.scroll = app.analytics.scroll.saturating_sub(1);
+        assert_eq!(app.analytics.scroll, 0);
+        app.analytics.scroll = app.analytics.scroll.saturating_sub(1);
+        assert_eq!(app.analytics.scroll, 0);
+    }
+
+    #[test]
+    fn test_analytics_tab_switch_resets_scroll() {
+        let mut app = App::new(vec![], None, vec![]);
+        app.analytics.scroll = 5;
+        app.analytics_next_tab();
+        assert_eq!(app.analytics.scroll, 0);
     }
 
     #[test]
