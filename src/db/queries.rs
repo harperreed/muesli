@@ -561,12 +561,13 @@ pub fn meetings_by_hour(conn: &Connection) -> Result<Vec<HourOfDayCount>> {
 pub fn avg_attendees_by_month(conn: &Connection, months: usize) -> Result<Vec<MeetingSizeByMonth>> {
     let mut stmt = conn.prepare(
         "SELECT strftime(CAST(d.created_at AS TIMESTAMP), '%Y-%m') as month,
-                avg(att_count) as avg_att
+                avg(COALESCE(att_count, 0)) as avg_att
          FROM documents d
          LEFT JOIN (
              SELECT doc_id, count(*) as att_count FROM attendees GROUP BY doc_id
          ) a ON d.doc_id = a.doc_id
-         WHERE CAST(d.created_at AS TIMESTAMP) >= current_date - CAST(? AS INTEGER) * INTERVAL 30 DAY
+         WHERE d.created_at IS NOT NULL
+           AND CAST(d.created_at AS TIMESTAMP) >= current_date - CAST(? AS INTEGER) * INTERVAL 30 DAY
          GROUP BY month
          ORDER BY month DESC",
     )?;
@@ -697,7 +698,7 @@ pub fn superlatives(conn: &Connection) -> Result<Superlatives> {
         .query_row(
             "SELECT title, strftime(CAST(created_at AS TIMESTAMP), '%Y-%m-%d'), duration_seconds
              FROM documents
-             WHERE duration_seconds IS NOT NULL
+             WHERE duration_seconds IS NOT NULL AND created_at IS NOT NULL
              ORDER BY duration_seconds DESC
              LIMIT 1",
             [],
@@ -749,6 +750,7 @@ pub fn superlatives(conn: &Connection) -> Result<Superlatives> {
         "WITH meeting_days AS (
              SELECT DISTINCT CAST(CAST(created_at AS TIMESTAMP) AS DATE) as day
              FROM documents
+             WHERE created_at IS NOT NULL
          ),
          gaps AS (
              SELECT day,
@@ -816,6 +818,7 @@ pub fn busiest_weeks(conn: &Connection, limit: usize) -> Result<Vec<WeeklyCount>
     let mut stmt = conn.prepare(
         "SELECT strftime(CAST(created_at AS TIMESTAMP), '%Y-W%W') as week, count(*) as cnt
          FROM documents
+         WHERE created_at IS NOT NULL
          GROUP BY week
          ORDER BY cnt DESC
          LIMIT ?",

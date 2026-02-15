@@ -713,8 +713,9 @@ fn draw_people_section(lines: &mut Vec<Line>, app: &App) {
     let collab_max = app
         .analytics
         .recent_collaborators
-        .first()
+        .iter()
         .map(|c| c.count)
+        .max()
         .unwrap_or(1);
     for collab in app.analytics.recent_collaborators.iter().take(10) {
         let bar = render_bar(collab.count, collab_max, 20);
@@ -765,8 +766,9 @@ fn draw_people_section(lines: &mut Vec<Line>, app: &App) {
     let comp_max = app
         .analytics
         .top_companies
-        .first()
+        .iter()
         .map(|c| c.count)
+        .max()
         .unwrap_or(1);
     for comp in app.analytics.top_companies.iter().take(10) {
         let bar = render_bar(comp.count, comp_max, 20);
@@ -847,6 +849,22 @@ fn draw_superlatives_section(lines: &mut Vec<Line>, app: &App) {
     )));
 
     if let Some(ref s) = app.analytics.superlatives {
+        // Check if all superlatives are empty/default
+        let has_any = s.marathon.is_some()
+            || s.social_butterfly.is_some()
+            || s.email_meetings > 0
+            || s.streak_days > 1
+            || s.solo_meetings > 0
+            || s.recurring_champ.is_some();
+
+        if !has_any {
+            lines.push(Line::from(Span::styled(
+                "  No data available",
+                Style::default().fg(Color::DarkGray),
+            )));
+            return;
+        }
+
         // Marathon Meeting
         if let Some((ref title, ref date, secs)) = s.marathon {
             let hours = secs / 3600;

@@ -137,6 +137,16 @@ impl Attendee {
 
     /// Heuristic check for non-person attendees (conference rooms, calendars, etc.)
     pub fn is_person(&self) -> bool {
+        // If we have person details from the enrichment API, it's definitely a person
+        if self
+            .details
+            .as_ref()
+            .and_then(|d| d.person.as_ref())
+            .is_some()
+        {
+            return true;
+        }
+        // Check email patterns for non-person entities (rooms, calendars)
         if let Some(ref email) = self.email {
             let email_lower = email.to_lowercase();
             if email_lower.contains("resource.calendar")
@@ -146,15 +156,6 @@ impl Attendee {
             {
                 return false;
             }
-        }
-        // If we have person details, it's a person
-        if self
-            .details
-            .as_ref()
-            .and_then(|d| d.person.as_ref())
-            .is_some()
-        {
-            return true;
         }
         // If we have a name (either top-level or display_name), assume person
         self.display_name().is_some()
