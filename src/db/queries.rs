@@ -1556,6 +1556,23 @@ mod tests {
     }
 
     #[test]
+    fn test_superlatives_default_has_no_meaningful_data() {
+        // The UI checks these exact fields to decide whether to render "No data available".
+        // This test ensures Superlatives::default() is treated as empty by that check.
+        let s = Superlatives::default();
+        let has_any = s.marathon.is_some()
+            || s.social_butterfly.is_some()
+            || s.email_meetings > 0
+            || s.streak_days > 1
+            || s.solo_meetings > 0
+            || s.recurring_champ.is_some();
+        assert!(
+            !has_any,
+            "Superlatives::default() should have no meaningful data for the UI empty-state"
+        );
+    }
+
+    #[test]
     fn test_superlatives_with_data() {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Standup", &["Alice", "Bob"], &[]);
@@ -1573,5 +1590,70 @@ mod tests {
         let (champ_title, champ_count) = s.recurring_champ.unwrap();
         assert_eq!(champ_title, "Standup");
         assert_eq!(champ_count, 2);
+    }
+
+    #[test]
+    fn test_busiest_weeks_excludes_null_created_at() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_test_metadata("Meeting", &[], &[]);
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+
+        // Manually insert a row with NULL created_at
+        conn.execute(
+            "INSERT INTO documents (doc_id, filename) VALUES ('doc_null', 'null-doc')",
+            [],
+        )
+        .unwrap();
+
+        let weeks = busiest_weeks(&conn, 52).unwrap();
+        let total: i64 = weeks.iter().map(|w| w.count).sum();
+        assert_eq!(total, 1, "NULL created_at rows should be excluded");
+    }
+
+    #[test]
+    fn test_superlatives_excludes_null_created_at() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_metadata_with_attendees("Standup", &["Alice", "Bob"], &[]);
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+
+        // Insert a row with NULL created_at and a long duration (would win marathon if included)
+        conn.execute(
+            "INSERT INTO documents (doc_id, filename, title, duration_seconds) \
+             VALUES ('doc_null', 'null-doc', 'Ghost Meeting', 999999)",
+            [],
+        )
+        .unwrap();
+
+        let s = superlatives(&conn).unwrap();
+        // Marathon should be the real meeting, not the ghost
+        assert!(s.marathon.is_some());
+        let (title, _, _) = s.marathon.unwrap();
+        assert_eq!(
+            title, "Standup",
+            "NULL created_at document should be excluded from marathon"
+        );
+    }
+
+    #[test]
+    fn test_avg_attendees_by_month_zero_attendee_docs() {
+        let conn = open_in_memory().unwrap();
+        // Insert a doc with attendees
+        let mut meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
+        meta.created_at = Utc::now();
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+
+        // Insert a doc with no attendees (uses make_test_metadata which has no attendees)
+        let mut meta_solo = make_test_metadata("Solo", &[], &[]);
+        meta_solo.created_at = Utc::now();
+        upsert_document(&conn, &meta_solo, "doc2", "b", None, None).unwrap();
+
+        let sizes = avg_attendees_by_month(&conn, 24).unwrap();
+        assert!(!sizes.is_empty());
+        // Average should be (2 + 0) / 2 = 1.0 (COALESCE ensures zero, not NULL skip)
+        assert!(
+            sizes[0].avg_attendees < 2.0,
+            "zero-attendee docs should contribute 0 to avg, got {}",
+            sizes[0].avg_attendees
+        );
     }
 }

@@ -89,6 +89,48 @@ mod tests {
         assert_eq!(doc.title.as_deref(), Some("Planning Meeting"));
         assert!(doc.updated_at.is_some());
     }
+
+    #[test]
+    fn test_is_person_with_denylisted_email_and_person_details() {
+        // Enrichment API returned person details, but the email matches a denylist pattern.
+        // Person details should take precedence — it's a real person.
+        let attendee = Attendee {
+            name: Some("Conference Room".into()),
+            email: Some("conf-room@resource.calendar.google.com".into()),
+            details: Some(PersonDetails {
+                person: Some(PersonInfo {
+                    name: Some(PersonName {
+                        full_name: Some("Conf Room Admin".into()),
+                    }),
+                    employment: None,
+                    linkedin: None,
+                }),
+                company: None,
+            }),
+        };
+        assert!(
+            attendee.is_person(),
+            "person details should override email denylist"
+        );
+    }
+
+    #[test]
+    fn test_is_person_with_empty_person_payload() {
+        // Enrichment API returned a PersonDetails with person: None.
+        // Should fall through to email denylist check.
+        let attendee = Attendee {
+            name: None,
+            email: Some("boardroom@resource.calendar.google.com".into()),
+            details: Some(PersonDetails {
+                person: None,
+                company: None,
+            }),
+        };
+        assert!(
+            !attendee.is_person(),
+            "empty person payload with denylisted email should not be a person"
+        );
+    }
 }
 
 /// Rich attendee information from Granola API
