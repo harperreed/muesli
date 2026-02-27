@@ -208,9 +208,12 @@ pub fn sync_all(
         let mut meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
 
-        // Backfill created_at from doc_summary if metadata lacks it
+        // Backfill fields from doc_summary when metadata lacks them
         if meta.created_at.is_none() {
             meta.created_at = Some(doc_summary.created_at);
+        }
+        if meta.title.is_none() {
+            meta.title = doc_summary.title.clone();
         }
 
         // Extract user notes from panels (my_notes → notes field → last_viewed_panel fallback)

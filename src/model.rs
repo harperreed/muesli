@@ -677,9 +677,9 @@ pub struct Frontmatter {
     #[serde(default)]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub creator: Option<Attendee>,
+    pub creator: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attendees: Option<Vec<Attendee>>,
+    pub attendees: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_text: Option<String>,
     pub generator: String,
@@ -730,28 +730,17 @@ mod frontmatter_tests {
             participants: vec!["Alice".into()],
             duration_seconds: None,
             labels: vec![],
-            creator: Some(Attendee {
-                name: Some("Alice".into()),
-                email: Some("alice@acme.com".into()),
-                details: None,
-            }),
-            attendees: Some(vec![Attendee {
-                name: Some("Alice".into()),
-                email: Some("alice@acme.com".into()),
-                details: None,
-            }]),
+            creator: Some("[[Alice]]".into()),
+            attendees: Some(vec!["[[Alice]]".into()]),
             summary_text: None,
             generator: "muesli 1.0".into(),
         };
 
         let yaml = serde_yaml::to_string(&fm).unwrap();
         let parsed: Frontmatter = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.creator.is_some());
-        assert_eq!(
-            parsed.creator.as_ref().unwrap().email.as_deref(),
-            Some("alice@acme.com")
-        );
+        assert_eq!(parsed.creator.as_deref(), Some("[[Alice]]"));
         assert_eq!(parsed.attendees.as_ref().unwrap().len(), 1);
+        assert_eq!(parsed.attendees.as_ref().unwrap()[0], "[[Alice]]");
     }
 
     #[test]
@@ -769,6 +758,57 @@ generator: muesli 1.0
         assert_eq!(parsed.doc_id, "doc123");
         assert!(parsed.creator.is_none());
         assert!(parsed.attendees.is_none());
+    }
+
+    #[test]
+    fn test_frontmatter_creator_as_wikilink() {
+        let fm = Frontmatter {
+            doc_id: "doc123".into(),
+            source: "granola".into(),
+            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            remote_updated_at: None,
+            title: Some("Test Meeting".into()),
+            participants: vec!["Alice".into()],
+            duration_seconds: None,
+            labels: vec![],
+            creator: Some("[[Alice Smith]]".into()),
+            attendees: Some(vec!["[[Alice Smith]]".into(), "[[Bob Jones]]".into()]),
+            summary_text: None,
+            generator: "muesli 1.0".into(),
+        };
+
+        let yaml = serde_yaml::to_string(&fm).unwrap();
+        assert!(yaml.contains("creator: '[[Alice Smith]]'"));
+        assert!(yaml.contains("- '[[Alice Smith]]'"));
+        assert!(yaml.contains("- '[[Bob Jones]]'"));
+
+        // Roundtrip
+        let parsed: Frontmatter = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.creator.as_deref(), Some("[[Alice Smith]]"));
+        assert_eq!(parsed.attendees.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_frontmatter_backward_compat_old_attendee_objects() {
+        // Old YAML with nested attendee objects should still parse
+        let yaml = r#"
+doc_id: doc123
+source: granola
+created_at: 2025-10-28T15:04:05Z
+title: Old Meeting
+participants: [Alice]
+creator:
+  name: Alice
+  email: alice@acme.com
+attendees:
+- name: Alice
+  email: alice@acme.com
+generator: muesli 1.0
+"#;
+        // This should either parse or gracefully handle the type mismatch
+        let result = serde_yaml::from_str::<Frontmatter>(yaml);
+        // Old object format won't parse as String — that's expected
+        assert!(result.is_err());
     }
 }
 

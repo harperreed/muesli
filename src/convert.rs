@@ -54,11 +54,32 @@ pub fn to_markdown(
         created_at: meta.created_at.unwrap_or_else(Utc::now),
         remote_updated_at: meta.updated_at,
         title: meta.title.clone(),
-        participants: meta.participants.clone(),
+        participants: if meta.participants.is_empty() {
+            // Derive participants from attendees display names
+            meta.attendees
+                .as_ref()
+                .map(|atts| {
+                    atts.iter()
+                        .filter(|a| a.is_person())
+                        .filter_map(|a| a.display_name())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            meta.participants.clone()
+        },
         duration_seconds: meta.duration_seconds,
         labels: meta.labels.clone(),
-        creator: meta.creator.clone(),
-        attendees: meta.attendees.clone(),
+        creator: meta
+            .creator
+            .as_ref()
+            .and_then(|c| c.display_name().map(|n| format!("[[{}]]", n))),
+        attendees: meta.attendees.as_ref().map(|atts| {
+            atts.iter()
+                .filter(|a| a.is_person())
+                .filter_map(|a| a.display_name().map(|n| format!("[[{}]]", n)))
+                .collect()
+        }),
         summary_text: summary_text.map(|s| s.to_string()),
         generator: "muesli 1.0".into(),
     };
@@ -277,8 +298,9 @@ mod tests {
             .contains("**Alice Smith**, Engineering Manager, Acme Corp, (alice@acme.com)"));
         assert!(output.body.contains("**Bob Jones**, (bob@acme.com)"));
 
-        // Frontmatter should have creator/attendees
-        assert!(output.frontmatter_yaml.contains("alice@acme.com"));
+        // Frontmatter should have creator/attendees as wiki-links
+        assert!(output.frontmatter_yaml.contains("[[Alice Smith]]"));
+        assert!(output.frontmatter_yaml.contains("[[Bob Jones]]"));
     }
 
     #[test]

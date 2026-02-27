@@ -14,30 +14,10 @@ participants:
 duration_seconds: 1800
 labels:
 - Planning
-creator:
-  name: Alice Smith
-  email: alice@acme.com
-  details:
-    person:
-      name:
-        fullName: Alice Smith
-      employment:
-        title: Engineering Manager
-    company:
-      name: Acme Corp
+creator: '[[Alice Smith]]'
 attendees:
-- name: Alice Smith
-  email: alice@acme.com
-  details:
-    person:
-      name:
-        fullName: Alice Smith
-      employment:
-        title: Engineering Manager
-    company:
-      name: Acme Corp
-- name: Bob Jones
-  email: bob@acme.com
+- '[[Alice Smith]]'
+- '[[Bob Jones]]'
 generator: muesli 1.0
 ---
 
