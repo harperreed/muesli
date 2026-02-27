@@ -205,8 +205,13 @@ pub fn sync_all(
         // Fetch metadata and transcript from API, keeping raw responses
         let meta_resp = client.get_metadata_with_raw(&doc_summary.id)?;
         let transcript_resp = client.get_transcript_with_raw(&doc_summary.id)?;
-        let meta = meta_resp.parsed;
+        let mut meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
+
+        // Backfill created_at from doc_summary if metadata lacks it
+        if meta.created_at.is_none() {
+            meta.created_at = Some(doc_summary.created_at);
+        }
 
         // Extract user notes from panels (my_notes → notes field → last_viewed_panel fallback)
         let notes_md = doc_summary
@@ -235,7 +240,8 @@ pub fn sync_all(
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
             // Compute filename (may have changed if title changed)
-            let date = meta.created_at.format("%Y-%m-%d").to_string();
+            let created = meta.created_at.unwrap_or(doc_summary.created_at);
+            let date = created.format("%Y-%m-%d").to_string();
             let slug = slugify(meta.title.as_deref().unwrap_or("untitled"));
             let base_filename = format!("{}_{}", date, slug);
             let new_md_path = paths.transcripts_dir.join(format!("{}.md", base_filename));
@@ -306,9 +312,9 @@ pub fn sync_all(
             }
 
             // Set file modification time to meeting creation date
-            set_file_time(&transcript_json_path, &meta.created_at)?;
-            set_file_time(&metadata_json_path, &meta.created_at)?;
-            set_file_time(&new_md_path, &meta.created_at)?;
+            set_file_time(&transcript_json_path, &created)?;
+            set_file_time(&metadata_json_path, &created)?;
+            set_file_time(&new_md_path, &created)?;
 
             // Update cache - CRITICAL: store the same timestamp we compare against
             // (doc_summary.updated_at, NOT meta.updated_at - they can differ!)
@@ -353,7 +359,7 @@ pub fn sync_all(
             // Index the document (feature-gated, non-fatal)
             #[cfg(feature = "index")]
             {
-                let date = meta.created_at.format("%Y-%m-%d").to_string();
+                let date = created.format("%Y-%m-%d").to_string();
                 if let Err(e) = text::index_markdown_batch(
                     &mut writer,
                     &index,

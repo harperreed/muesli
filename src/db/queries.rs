@@ -89,7 +89,7 @@ fn upsert_document_inner(
     notes: Option<&str>,
     summary_text: Option<&str>,
 ) -> Result<()> {
-    let created_at = fmt_ts(&meta.created_at);
+    let created_at = meta.created_at.as_ref().map(fmt_ts);
     let updated_at = meta.updated_at.as_ref().map(fmt_ts);
     let synced_at = fmt_ts(&Utc::now());
 
@@ -914,7 +914,7 @@ mod tests {
         DocumentMetadata {
             id: None,
             title: Some(title.to_string()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: Some("2025-10-29T01:00:00Z".parse().unwrap()),
             participants: participants.iter().map(|s| s.to_string()).collect(),
             duration_seconds: Some(3600),
@@ -952,7 +952,7 @@ mod tests {
         DocumentMetadata {
             id: None,
             title: Some(title.to_string()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: Some("2025-10-29T01:00:00Z".parse().unwrap()),
             participants: attendee_names.iter().map(|s| s.to_string()).collect(),
             duration_seconds: Some(3600),
@@ -1087,7 +1087,7 @@ mod tests {
     fn test_stats() {
         let conn = open_in_memory().unwrap();
         let mut meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
-        meta.created_at = Utc::now();
+        meta.created_at = Some(Utc::now());
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let stats = get_stats(&conn).unwrap();
@@ -1368,7 +1368,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: None,
             title: Some("Meeting".to_string()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -1438,7 +1438,7 @@ mod tests {
     fn test_avg_attendees_by_month() {
         let conn = open_in_memory().unwrap();
         let mut meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
-        meta.created_at = Utc::now();
+        meta.created_at = Some(Utc::now());
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let sizes = avg_attendees_by_month(&conn, 24).unwrap();
@@ -1452,7 +1452,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: None,
             title: Some("Meeting".to_string()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -1487,7 +1487,7 @@ mod tests {
     fn test_top_collaborators_recent() {
         let conn = open_in_memory().unwrap();
         let mut meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
-        meta.created_at = Utc::now();
+        meta.created_at = Some(Utc::now());
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let collabs = top_collaborators_recent(&conn, 30, 10).unwrap();
@@ -1499,7 +1499,7 @@ mod tests {
     fn test_new_attendees_this_month() {
         let conn = open_in_memory().unwrap();
         let mut meta = make_metadata_with_attendees("Meeting", &["Alice"], &[]);
-        meta.created_at = Utc::now();
+        meta.created_at = Some(Utc::now());
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         let new_faces = new_attendees_this_month(&conn).unwrap();
@@ -1639,12 +1639,12 @@ mod tests {
         let conn = open_in_memory().unwrap();
         // Insert a doc with attendees
         let mut meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
-        meta.created_at = Utc::now();
+        meta.created_at = Some(Utc::now());
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
 
         // Insert a doc with no attendees (uses make_test_metadata which has no attendees)
         let mut meta_solo = make_test_metadata("Solo", &[], &[]);
-        meta_solo.created_at = Utc::now();
+        meta_solo.created_at = Some(Utc::now());
         upsert_document(&conn, &meta_solo, "doc2", "b", None, None).unwrap();
 
         let sizes = avg_attendees_by_month(&conn, 24).unwrap();

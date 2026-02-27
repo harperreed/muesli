@@ -414,7 +414,7 @@ fn test_notes_and_summary_in_markdown() {
     let meta = DocumentMetadata {
         id: Some("doc-test".into()),
         title: Some("Integration Test Meeting".into()),
-        created_at: "2025-12-01T09:00:00Z".parse().unwrap(),
+        created_at: Some("2025-12-01T09:00:00Z".parse().unwrap()),
         updated_at: None,
         participants: vec!["Alice".into(), "Bob".into()],
         duration_seconds: Some(1800),
@@ -489,7 +489,7 @@ fn test_db_notes_summary_roundtrip() {
     let meta = DocumentMetadata {
         id: Some("doc-roundtrip".into()),
         title: Some("Roundtrip Test".into()),
-        created_at: "2025-12-01T09:00:00Z".parse().unwrap(),
+        created_at: Some("2025-12-01T09:00:00Z".parse().unwrap()),
         updated_at: Some("2025-12-02T10:00:00Z".parse().unwrap()),
         participants: vec!["Alice".into()],
         duration_seconds: Some(600),
@@ -555,7 +555,7 @@ fn test_empty_last_viewed_panel_no_notes_section() {
     let meta = DocumentMetadata {
         id: Some("doc-empty-panel".into()),
         title: Some("Meeting".into()),
-        created_at: "2025-12-01T09:00:00Z".parse().unwrap(),
+        created_at: Some("2025-12-01T09:00:00Z".parse().unwrap()),
         updated_at: None,
         participants: vec![],
         duration_seconds: None,
@@ -600,7 +600,7 @@ fn test_empty_summary_text_no_summary_section() {
     let meta = DocumentMetadata {
         id: Some("doc-empty-summary".into()),
         title: Some("Meeting".into()),
-        created_at: "2025-12-01T09:00:00Z".parse().unwrap(),
+        created_at: Some("2025-12-01T09:00:00Z".parse().unwrap()),
         updated_at: None,
         participants: vec![],
         duration_seconds: None,

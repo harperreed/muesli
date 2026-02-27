@@ -1,6 +1,8 @@
 // ABOUTME: Converts raw transcript JSON to structured Markdown
 // ABOUTME: Supports both segment and monologue formats with frontmatter and ProseMirror conversion
 
+use chrono::Utc;
+
 use crate::model::{Attendee, ProseMirrorDoc, ProseMirrorNode};
 use crate::util::normalize_timestamp;
 use crate::{DocumentMetadata, Frontmatter, RawTranscript, Result};
@@ -49,7 +51,7 @@ pub fn to_markdown(
     let frontmatter = Frontmatter {
         doc_id: doc_id.to_string(),
         source: "granola".into(),
-        created_at: meta.created_at,
+        created_at: meta.created_at.unwrap_or_else(Utc::now),
         remote_updated_at: meta.updated_at,
         title: meta.title.clone(),
         participants: meta.participants.clone(),
@@ -73,7 +75,7 @@ pub fn to_markdown(
     let mut body = format!("# {}\n\n", title);
 
     // Metadata line
-    let date = meta.created_at.format("%Y-%m-%d");
+    let date = meta.created_at.unwrap_or_else(Utc::now).format("%Y-%m-%d");
     let mut meta_parts = vec![format!("Date: {}", date)];
 
     if let Some(duration) = meta.duration_seconds {
@@ -177,7 +179,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Test Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec!["Alice".into(), "Bob".into()],
             duration_seconds: Some(3600),
@@ -217,7 +219,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Team Standup".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec!["Alice Smith".into(), "Bob Jones".into()],
             duration_seconds: Some(900),
@@ -297,7 +299,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec!["Alice".into()],
             duration_seconds: None,
@@ -328,7 +330,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -353,7 +355,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: None,
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -386,7 +388,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec!["Alice".into()],
             duration_seconds: None,
@@ -441,7 +443,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -475,7 +477,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -509,7 +511,7 @@ mod tests {
         let meta = DocumentMetadata {
             id: Some("doc123".into()),
             title: Some("Meeting".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: None,
             participants: vec![],
             duration_seconds: None,
@@ -559,7 +561,7 @@ mod snapshot_tests {
         let meta = DocumentMetadata {
             id: Some("doc456".into()),
             title: Some("Planning Session".into()),
-            created_at: "2025-10-28T15:04:05Z".parse().unwrap(),
+            created_at: Some("2025-10-28T15:04:05Z".parse().unwrap()),
             updated_at: Some("2025-10-29T01:23:45Z".parse().unwrap()),
             participants: vec!["Alice".into(), "Bob".into()],
             duration_seconds: Some(3170),
@@ -608,7 +610,7 @@ mod snapshot_tests {
         let meta = DocumentMetadata {
             id: Some("doc789".into()),
             title: Some("Q1 Planning".into()),
-            created_at: "2025-11-01T10:00:00Z".parse().unwrap(),
+            created_at: Some("2025-11-01T10:00:00Z".parse().unwrap()),
             updated_at: Some("2025-11-02T08:00:00Z".parse().unwrap()),
             participants: vec!["Alice Smith".into(), "Bob Jones".into()],
             duration_seconds: Some(1800),

@@ -65,7 +65,8 @@ fn run() -> Result<()> {
             let transcript = transcript_resp.parsed;
 
             // Compute filename
-            let date = meta.created_at.format("%Y-%m-%d").to_string();
+            let created = meta.created_at.unwrap_or_else(chrono::Utc::now);
+            let date = created.format("%Y-%m-%d").to_string();
             let slug = muesli::util::slugify(meta.title.as_deref().unwrap_or("untitled"));
             let base_filename = format!("{}_{}", date, slug);
 
@@ -95,9 +96,9 @@ fn run() -> Result<()> {
             muesli::storage::write_atomic(&md_path, full_md.as_bytes(), &paths.tmp_dir)?;
 
             // Set file modification time to meeting creation date
-            muesli::storage::set_file_time(&transcript_json_path, &meta.created_at)?;
-            muesli::storage::set_file_time(&metadata_json_path, &meta.created_at)?;
-            muesli::storage::set_file_time(&md_path, &meta.created_at)?;
+            muesli::storage::set_file_time(&transcript_json_path, &created)?;
+            muesli::storage::set_file_time(&metadata_json_path, &created)?;
+            muesli::storage::set_file_time(&md_path, &created)?;
 
             println!("wrote {}", transcript_json_path.display());
             println!("wrote {}", metadata_json_path.display());

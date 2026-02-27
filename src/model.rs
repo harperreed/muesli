@@ -252,7 +252,8 @@ pub struct DocumentMetadata {
     pub id: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
-    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -357,6 +358,34 @@ mod metadata_tests {
         assert_eq!(attendees[1].name.as_deref(), Some("Bob Jones"));
         assert_eq!(attendees[1].email.as_deref(), Some("bob@acme.com"));
         assert!(attendees[1].details.is_none());
+    }
+
+    #[test]
+    fn test_document_metadata_missing_created_at() {
+        // Reproduces real API response where created_at is absent
+        let json = r#"{
+            "creator": {
+                "name": "Harper Reed",
+                "email": "harper@example.com",
+                "details": {
+                    "person": { "name": { "fullName": "Harper Reed" } },
+                    "company": {}
+                }
+            },
+            "attendees": [
+                {
+                    "email": "alice@example.com",
+                    "details": {
+                        "person": { "name": { "fullName": "Alice" } },
+                        "company": {}
+                    }
+                }
+            ]
+        }"#;
+        let meta: DocumentMetadata = serde_json::from_str(json).unwrap();
+        assert!(meta.created_at.is_none());
+        assert!(meta.creator.is_some());
+        assert_eq!(meta.attendees.as_ref().unwrap().len(), 1);
     }
 
     #[test]
