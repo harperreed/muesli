@@ -172,7 +172,12 @@ pub fn sync_all(
                 match crate::db::queries::get_cache_entry(&db_conn, &doc_summary.id) {
                     Ok(Some(entry)) => {
                         let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
-                        (remote_ts > entry.updated_at, Some(entry.filename))
+                        let ts_changed = remote_ts > entry.updated_at;
+                        // Re-sync if the API has a summary but the DB doesn't
+                        let needs_summary = doc_summary.enhanced_notes().is_some()
+                            && crate::db::queries::doc_missing_summary(&db_conn, &doc_summary.id)
+                                .unwrap_or(false);
+                        (ts_changed || needs_summary, Some(entry.filename))
                     }
                     _ => (true, None),
                 }

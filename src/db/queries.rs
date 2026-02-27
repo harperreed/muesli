@@ -186,6 +186,20 @@ fn upsert_document_inner(
     Ok(())
 }
 
+/// Check if a document exists in the DB but has no summary_text.
+/// Returns true if the doc is missing or has NULL summary_text.
+pub fn doc_missing_summary(conn: &Connection, doc_id: &str) -> Result<bool> {
+    let mut stmt = conn.prepare("SELECT summary_text IS NULL FROM documents WHERE doc_id = ?")?;
+    let mut rows = stmt.query(params![doc_id])?;
+    if let Some(row) = rows.next()? {
+        let is_null: bool = row.get(0)?;
+        Ok(is_null)
+    } else {
+        // Doc not in DB at all — treat as missing
+        Ok(true)
+    }
+}
+
 /// Get a sync cache entry for a document.
 pub fn get_cache_entry(conn: &Connection, doc_id: &str) -> Result<Option<CacheEntry>> {
     let mut stmt = conn.prepare("SELECT filename, updated_at FROM sync_cache WHERE doc_id = ?")?;
@@ -1024,6 +1038,23 @@ mod tests {
         let entry = get_cache_entry(&conn, "doc1").unwrap().unwrap();
         assert_eq!(entry.filename, "2025-10-29_standup-v2");
         assert_eq!(entry.updated_at, ts2);
+    }
+
+    #[test]
+    fn test_doc_missing_summary() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_test_metadata("Meeting", &[], &[]);
+
+        // Doc with no summary
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+        assert!(doc_missing_summary(&conn, "doc1").unwrap());
+
+        // Doc with summary
+        upsert_document(&conn, &meta, "doc2", "b", None, Some("AI summary")).unwrap();
+        assert!(!doc_missing_summary(&conn, "doc2").unwrap());
+
+        // Unknown doc
+        assert!(doc_missing_summary(&conn, "doc-unknown").unwrap());
     }
 
     #[test]
