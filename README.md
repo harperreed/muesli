@@ -458,6 +458,119 @@ This is normal on first sync. The e5-small-v2 model (~133MB) is downloaded once 
 
 Grant Terminal/iTerm2 keychain access in System Preferences → Privacy & Security.
 
+## Offline & Remote Usage
+
+Muesli can run on machines without Granola installed or API access. Sync your transcripts on a machine with Granola, then copy the data to any other machine.
+
+### Transfer data to a remote machine
+
+```bash
+# On the source machine (with Granola), sync first
+muesli sync
+
+# Copy the data directory to the remote machine
+rsync -a ~/.local/share/muesli/ remote:~/.local/share/muesli/
+```
+
+The data directory contains everything needed: markdown transcripts, raw JSON, the DuckDB database, and search indexes.
+
+### Install muesli on the remote machine
+
+```bash
+# Install Rust if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install muesli
+cargo install --git https://github.com/harperreed/muesli.git
+```
+
+### Local commands (no API key needed)
+
+These commands work entirely from local data:
+
+```bash
+# List all synced documents
+muesli local
+
+# View a document's summary and metadata
+muesli show <doc-id>
+
+# View the full transcript
+muesli show <doc-id> --full
+
+# Find documents by semantic search (default)
+muesli find "quarterly planning"
+
+# Find documents by text search
+muesli find "quarterly planning" --text
+
+# Query by attendee, label, or title
+muesli query --attendee "Alice"
+
+# View meeting statistics
+muesli stats
+
+# Launch interactive dashboard
+muesli tui
+```
+
+### Using a custom data directory
+
+If the data is stored in a non-default location:
+
+```bash
+muesli --data-dir /path/to/muesli local
+muesli --data-dir /path/to/muesli show <doc-id>
+muesli --data-dir /path/to/muesli find "budget review"
+```
+
+## Using with AI Agents
+
+Muesli integrates with AI coding agents like [Claude Code](https://claude.ai/claude-code) in two ways: as a CLI tool and as an MCP server.
+
+### Claude Code skill
+
+Muesli includes a [Claude Code skill](.claude/skills/muesli/SKILL.md) that teaches Claude how to use the CLI. When you clone this repo and use Claude Code, the skill is automatically available. Claude can then search your meetings, look up transcripts, and reference meeting content in conversations.
+
+Example interactions Claude can handle:
+
+- "What did we discuss about pricing last month?"
+- "Show me the summary from yesterday's standup"
+- "Find meetings with Alice about the product roadmap"
+
+Claude uses these commands under the hood:
+
+```bash
+muesli find "pricing" -n 5          # Semantic search for relevant meetings
+muesli show <doc-id>                 # View the summary
+muesli show <doc-id> --full          # Read the full transcript
+muesli local | grep "2025-06"        # Find meetings by date
+muesli query --attendee "Alice"      # Filter by attendee
+```
+
+### MCP server
+
+For deeper integration, muesli can run as an [MCP](https://modelcontextprotocol.io/) server, giving AI assistants direct access to search, read, and analyze transcripts.
+
+```bash
+muesli mcp
+```
+
+Add to your Claude Code MCP configuration (`~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "muesli": {
+      "command": "muesli",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The MCP server provides tools for listing, searching, syncing, and summarizing transcripts, plus structured prompts for meeting analysis, action item extraction, and follow-up tracking.
+
 ## Contributing
 
 Contributions welcome! Please:
