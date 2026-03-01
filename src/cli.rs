@@ -66,6 +66,10 @@ pub enum Commands {
     /// List all documents
     List,
 
+    /// List documents from the local database (no API key needed)
+    #[cfg(feature = "storage")]
+    Local,
+
     /// Fetch a specific document by ID
     Fetch {
         /// Document ID to fetch

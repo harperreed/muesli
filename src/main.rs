@@ -53,6 +53,23 @@ fn run() -> Result<()> {
                 println!("{}\t{}\t{}", doc.id, date, title);
             }
         }
+        #[cfg(feature = "storage")]
+        Some(muesli::cli::Commands::Local) => {
+            let paths = Paths::new(cli.data_dir)?;
+            let conn = muesli::db::connection::open_or_create(&paths.db_path)?;
+            let mut docs = muesli::db::queries::list_documents(&conn)?;
+            docs.reverse();
+
+            if docs.is_empty() {
+                eprintln!("No documents found. Run 'muesli sync' first.");
+            } else {
+                for doc in &docs {
+                    let date = doc.created_at.format("%Y-%m-%d");
+                    let title = doc.title.as_deref().unwrap_or("Untitled");
+                    println!("{}\t{}\t{}", date, doc.doc_id, title);
+                }
+            }
+        }
         Some(muesli::cli::Commands::Fetch { ref id }) => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
