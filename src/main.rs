@@ -117,6 +117,58 @@ fn run() -> Result<()> {
                 eprintln!("\nNo summary available. Use --full to show the transcript.");
             }
         }
+        #[cfg(feature = "index")]
+        Some(muesli::cli::Commands::Find { query, limit, text }) => {
+            let paths = Paths::new(cli.data_dir)?;
+
+            if text {
+                // Text search via Tantivy
+                if !paths.index_dir.exists() {
+                    eprintln!("No index found. Run 'muesli sync' first to build the index.");
+                    std::process::exit(1);
+                }
+                let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                let results = muesli::index::text::search(&index, &query, limit)?;
+
+                if results.is_empty() {
+                    println!("No results found for: {}", query);
+                } else {
+                    for (rank, result) in results.iter().enumerate() {
+                        let title = result.title.as_deref().unwrap_or("Untitled");
+                        println!("{}. {} ({})  {}", rank + 1, title, result.date, result.doc_id);
+                    }
+                }
+            } else {
+                // Semantic search via embeddings
+                #[cfg(feature = "embeddings")]
+                {
+                    let metadata_path = paths.index_dir.join("vectors.meta.json");
+                    if !metadata_path.exists() {
+                        eprintln!("No vector store found. Run 'muesli sync' first to generate embeddings.");
+                        std::process::exit(1);
+                    }
+
+                    let results = muesli::embeddings::semantic_search(&paths, &query, limit)?;
+
+                    if results.is_empty() {
+                        println!("No results found for: {}", query);
+                    } else {
+                        for (rank, result) in results.iter().enumerate() {
+                            let title = result.title.as_deref().unwrap_or("Untitled");
+                            println!(
+                                "{}. {} ({}) [score: {:.3}]  {}",
+                                rank + 1, title, result.date, result.score, result.doc_id
+                            );
+                        }
+                    }
+                }
+                #[cfg(not(feature = "embeddings"))]
+                {
+                    eprintln!("Semantic search requires the 'embeddings' feature. Use --text for text search.");
+                    std::process::exit(1);
+                }
+            }
+        }
         Some(muesli::cli::Commands::Fetch { ref id }) => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;

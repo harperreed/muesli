@@ -81,6 +81,21 @@ pub enum Commands {
         full: bool,
     },
 
+    /// Find documents by semantic or text search, returning doc IDs
+    #[cfg(feature = "index")]
+    Find {
+        /// Search query string
+        query: String,
+
+        /// Maximum number of results to return
+        #[arg(short = 'n', long, default_value_t = 10)]
+        limit: usize,
+
+        /// Use text search instead of semantic search
+        #[arg(long)]
+        text: bool,
+    },
+
     /// Fetch a specific document by ID
     Fetch {
         /// Document ID to fetch
