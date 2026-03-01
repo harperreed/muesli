@@ -70,6 +70,17 @@ pub enum Commands {
     #[cfg(feature = "storage")]
     Local,
 
+    /// Show a document's summary, metadata, or full transcript
+    #[cfg(feature = "storage")]
+    Show {
+        /// Document ID to show
+        doc_id: String,
+
+        /// Show the full transcript instead of just the summary
+        #[arg(long)]
+        full: bool,
+    },
+
     /// Fetch a specific document by ID
     Fetch {
         /// Document ID to fetch

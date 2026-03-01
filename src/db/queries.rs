@@ -247,6 +247,67 @@ pub fn list_documents(conn: &Connection) -> Result<Vec<DocumentRow>> {
     Ok(docs)
 }
 
+/// Detail view of a single document, including summary and attendees.
+#[derive(Debug, Clone)]
+pub struct DocumentDetail {
+    pub doc_id: String,
+    pub title: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub duration_seconds: Option<i64>,
+    pub filename: Option<String>,
+    pub summary_text: Option<String>,
+    pub notes: Option<String>,
+    pub attendees: Vec<String>,
+    pub labels: Vec<String>,
+}
+
+/// Get a single document by ID with summary, notes, attendees, and labels.
+pub fn get_document(conn: &Connection, doc_id: &str) -> Result<Option<DocumentDetail>> {
+    let mut stmt = conn.prepare(
+        "SELECT doc_id, title, created_at, duration_seconds, filename, summary_text, notes
+         FROM documents WHERE doc_id = ?",
+    )?;
+    let mut rows = stmt.query_map(params![doc_id], |row| {
+        let created_at_str: String = row.get(2)?;
+        Ok(DocumentDetail {
+            doc_id: row.get(0)?,
+            title: row.get(1)?,
+            created_at: parse_ts(&created_at_str),
+            duration_seconds: row.get(3)?,
+            filename: row.get(4)?,
+            summary_text: row.get(5)?,
+            notes: row.get(6)?,
+            attendees: Vec::new(),
+            labels: Vec::new(),
+        })
+    })?;
+
+    let Some(doc) = rows.next() else {
+        return Ok(None);
+    };
+    let mut doc = doc.map_err(|e| crate::Error::Database(e.to_string()))?;
+
+    // Fetch attendees
+    let mut att_stmt = conn.prepare(
+        "SELECT name FROM attendees WHERE doc_id = ? AND name IS NOT NULL ORDER BY name",
+    )?;
+    let att_rows = att_stmt.query_map(params![doc_id], |row| row.get::<_, String>(0))?;
+    for name in att_rows {
+        doc.attendees.push(name.map_err(|e| crate::Error::Database(e.to_string()))?);
+    }
+
+    // Fetch labels
+    let mut lbl_stmt = conn.prepare(
+        "SELECT label FROM labels WHERE doc_id = ? ORDER BY label",
+    )?;
+    let lbl_rows = lbl_stmt.query_map(params![doc_id], |row| row.get::<_, String>(0))?;
+    for label in lbl_rows {
+        doc.labels.push(label.map_err(|e| crate::Error::Database(e.to_string()))?);
+    }
+
+    Ok(Some(doc))
+}
+
 /// Search documents by title (case-insensitive LIKE).
 pub fn search_documents(conn: &Connection, query: &str, limit: usize) -> Result<Vec<DocumentRow>> {
     let pattern = format!("%{}%", query);

@@ -70,6 +70,53 @@ fn run() -> Result<()> {
                 }
             }
         }
+        #[cfg(feature = "storage")]
+        Some(muesli::cli::Commands::Show { ref doc_id, full }) => {
+            let paths = Paths::new(cli.data_dir.clone())?;
+            let conn = muesli::db::connection::open_or_create(&paths.db_path)?;
+
+            let doc = muesli::db::queries::get_document(&conn, doc_id)?
+                .ok_or_else(|| muesli::Error::Filesystem(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("No document found with ID: {}", doc_id),
+                )))?;
+
+            let date = doc.created_at.format("%Y-%m-%d %H:%M");
+            let title = doc.title.as_deref().unwrap_or("Untitled");
+            let duration = doc.duration_seconds
+                .map(|d| format!("{}m", d / 60))
+                .unwrap_or_else(|| "—".to_string());
+
+            println!("{}", title);
+            println!("{}\t{}\t{}", date, duration, doc.doc_id);
+            if !doc.attendees.is_empty() {
+                println!("Attendees: {}", doc.attendees.join(", "));
+            }
+            if !doc.labels.is_empty() {
+                println!("Labels: {}", doc.labels.join(", "));
+            }
+
+            if full {
+                // Print the full transcript from the markdown file
+                if let Some(ref filename) = doc.filename {
+                    let md_path = paths.transcripts_dir.join(format!("{}.md", filename));
+                    if md_path.exists() {
+                        let content = std::fs::read_to_string(&md_path)?;
+                        println!("\n{}", content);
+                    } else {
+                        eprintln!("Transcript file not found: {}", md_path.display());
+                    }
+                } else {
+                    eprintln!("No transcript file recorded for this document.");
+                }
+            } else if let Some(ref summary) = doc.summary_text {
+                println!("\n{}", summary);
+            } else if let Some(ref notes) = doc.notes {
+                println!("\n{}", notes);
+            } else {
+                eprintln!("\nNo summary available. Use --full to show the transcript.");
+            }
+        }
         Some(muesli::cli::Commands::Fetch { ref id }) => {
             let client = create_client(&cli)?;
             let paths = Paths::new(cli.data_dir)?;
