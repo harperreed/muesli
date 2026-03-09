@@ -398,6 +398,28 @@ pub fn get_stats(conn: &Connection) -> Result<Stats> {
     })
 }
 
+/// List all doc_ids and filenames from the sync cache.
+pub fn list_all_cached_entries(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT doc_id, filename FROM sync_cache")?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.push(row?);
+    }
+    Ok(entries)
+}
+
+/// Delete a document and all related rows from the database.
+pub fn delete_document(conn: &Connection, doc_id: &str) -> Result<()> {
+    // DuckDB doesn't support CASCADE, so delete related rows first
+    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM documents WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM sync_cache WHERE doc_id = ?", params![doc_id])?;
+    Ok(())
+}
+
 /// Migrate sync cache from the legacy JSON file format to DuckDB.
 pub fn migrate_from_json_cache(conn: &Connection, cache_path: &std::path::Path) -> Result<()> {
     use std::collections::HashMap;

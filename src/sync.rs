@@ -436,6 +436,69 @@ pub fn sync_all(
         skipped
     ));
 
+    // Detect and remove locally-cached documents that no longer exist on the server
+    let remote_ids: std::collections::HashSet<&str> =
+        docs.iter().map(|d| d.id.as_str()).collect();
+
+    #[cfg(feature = "storage")]
+    {
+        let cached_entries = crate::db::queries::list_all_cached_entries(&db_conn)?;
+        let mut deleted = 0;
+        for (doc_id, filename) in &cached_entries {
+            if remote_ids.contains(doc_id.as_str()) {
+                continue;
+            }
+            // Remove local files
+            let md_path = paths.transcripts_dir.join(format!("{}.md", filename));
+            if md_path.exists() {
+                std::fs::remove_file(&md_path)?;
+            }
+            for suffix in &["_transcript", "_metadata", ""] {
+                let json_path = paths.raw_dir.join(format!("{}{}.json", filename, suffix));
+                if json_path.exists() {
+                    std::fs::remove_file(&json_path)?;
+                }
+            }
+            // Remove from database
+            crate::db::queries::delete_document(&db_conn, doc_id)?;
+            deleted += 1;
+        }
+        if deleted > 0 {
+            println!("Removed {} deleted documents", deleted);
+        }
+    }
+
+    #[cfg(not(feature = "storage"))]
+    {
+        let stale_ids: Vec<String> = cache
+            .keys()
+            .filter(|id| !remote_ids.contains(id.as_str()))
+            .cloned()
+            .collect();
+        let mut deleted = 0;
+        for doc_id in &stale_ids {
+            if let Some(entry) = cache.remove(doc_id) {
+                let md_path = paths.transcripts_dir.join(format!("{}.md", entry.filename));
+                if md_path.exists() {
+                    std::fs::remove_file(&md_path)?;
+                }
+                for suffix in &["_transcript", "_metadata", ""] {
+                    let json_path = paths
+                        .raw_dir
+                        .join(format!("{}{}.json", entry.filename, suffix));
+                    if json_path.exists() {
+                        std::fs::remove_file(&json_path)?;
+                    }
+                }
+                deleted += 1;
+            }
+        }
+        if deleted > 0 {
+            save_cache(&cache_path, &cache, &paths.tmp_dir)?;
+            println!("Removed {} deleted documents", deleted);
+        }
+    }
+
     // Commit all indexed documents in one batch (feature-gated)
     #[cfg(feature = "index")]
     {
