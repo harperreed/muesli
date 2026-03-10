@@ -136,7 +136,7 @@ fn run() -> Result<()> {
                     eprintln!("No index found. Run 'muesli sync' first to build the index.");
                     std::process::exit(1);
                 }
-                let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                let index = muesli::index::text::open_index(&paths.index_dir)?;
                 let results = muesli::index::text::search(&index, &query, limit)?;
 
                 if results.is_empty() {
@@ -176,7 +176,7 @@ fn run() -> Result<()> {
                             std::process::exit(1);
                         }
                         let index =
-                            muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                            muesli::index::text::open_index(&paths.index_dir)?;
                         let results = muesli::index::text::search(&index, &query, limit)?;
 
                         if results.is_empty() {
@@ -200,7 +200,7 @@ fn run() -> Result<()> {
                         eprintln!("No index found. Run 'muesli sync' first to build the index.");
                         std::process::exit(1);
                     }
-                    let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                    let index = muesli::index::text::open_index(&paths.index_dir)?;
                     let results = muesli::index::text::search(&index, &query, limit)?;
 
                     if results.is_empty() {
@@ -318,7 +318,7 @@ fn run() -> Result<()> {
             }
 
             // Open the index
-            let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
+            let index = muesli::index::text::open_index(&paths.index_dir)?;
 
             // Perform the search
             let results = muesli::index::text::search(&index, &query, limit)?;

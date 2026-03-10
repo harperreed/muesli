@@ -16,6 +16,11 @@ pub struct SearchResult {
     pub score: f32,
 }
 
+/// Opens an existing Tantivy index (read-only, fails if missing/corrupt).
+pub fn open_index(index_dir: &Path) -> Result<Index> {
+    Index::open_in_dir(index_dir).map_err(|e| Error::Indexing(e.to_string()))
+}
+
 /// Creates or opens a Tantivy index at the specified directory
 pub fn create_or_open_index(index_dir: &Path) -> Result<Index> {
     // Create directory if it doesn't exist

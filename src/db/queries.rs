@@ -97,7 +97,10 @@ fn upsert_document_inner(
 
     // Delete child rows first so the document upsert doesn't hit FK violations
     // (DuckDB's ON CONFLICT may internally delete+insert, triggering FK checks)
-    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+    // Only delete attendees if the API provided them (None means absent, not empty)
+    if meta.attendees.is_some() {
+        conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+    }
     conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
     conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
 
@@ -1254,40 +1257,102 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Meeting", &["Alice"], &["Tag"]);
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+        upsert_cache_entry(
+            &conn,
+            "doc1",
+            "a",
+            &"2025-10-28T15:04:05Z".parse().unwrap(),
+        )
+        .unwrap();
 
         // Verify data exists
-        let att_count: i64 = conn
-            .query_row("SELECT count(*) FROM attendees", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(att_count, 1);
+        assert!(get_document(&conn, "doc1").unwrap().is_some());
+        assert!(!list_all_cached_entries(&conn).unwrap().is_empty());
 
-        // Delete related rows first (DuckDB doesn't support CASCADE)
-        conn.execute("DELETE FROM attendees WHERE doc_id = 'doc1'", [])
-            .unwrap();
-        conn.execute("DELETE FROM labels WHERE doc_id = 'doc1'", [])
-            .unwrap();
-        conn.execute("DELETE FROM participants WHERE doc_id = 'doc1'", [])
-            .unwrap();
-        conn.execute("DELETE FROM documents WHERE doc_id = 'doc1'", [])
-            .unwrap();
+        // Delete via the public function
+        delete_document(&conn, "doc1").unwrap();
 
-        // Attendees should be gone
+        // Everything should be gone
+        assert!(get_document(&conn, "doc1").unwrap().is_none());
+        assert!(list_all_cached_entries(&conn).unwrap().is_empty());
+
         let att_count: i64 = conn
             .query_row("SELECT count(*) FROM attendees", [], |row| row.get(0))
             .unwrap();
         assert_eq!(att_count, 0);
 
-        // Labels should be gone
         let label_count: i64 = conn
             .query_row("SELECT count(*) FROM labels", [], |row| row.get(0))
             .unwrap();
         assert_eq!(label_count, 0);
+    }
 
-        // Documents should be gone
-        let doc_count: i64 = conn
-            .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(doc_count, 0);
+    #[test]
+    fn test_get_document_returns_full_detail() {
+        let conn = open_in_memory().unwrap();
+        let meta = make_metadata_with_attendees("Team Standup", &["Alice", "Bob"], &["daily"]);
+        upsert_document(
+            &conn,
+            &meta,
+            "doc1",
+            "standup",
+            Some("my notes"),
+            Some("AI summary"),
+        )
+        .unwrap();
+
+        let doc = get_document(&conn, "doc1").unwrap().unwrap();
+        assert_eq!(doc.doc_id, "doc1");
+        assert_eq!(doc.title.as_deref(), Some("Team Standup"));
+        assert_eq!(doc.notes.as_deref(), Some("my notes"));
+        assert_eq!(doc.summary_text.as_deref(), Some("AI summary"));
+        assert_eq!(doc.attendees, vec!["Alice", "Bob"]);
+        assert_eq!(doc.labels, vec!["daily"]);
+        assert_eq!(doc.duration_seconds, Some(3600));
+        // created_at should be parsed, not UNIX_EPOCH
+        assert!(doc.created_at.timestamp() > 0);
+    }
+
+    #[test]
+    fn test_get_document_returns_none_for_missing() {
+        let conn = open_in_memory().unwrap();
+        assert!(get_document(&conn, "nonexistent").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_list_all_cached_entries_returns_inserted() {
+        let conn = open_in_memory().unwrap();
+        let ts: DateTime<Utc> = "2025-10-28T15:04:05Z".parse().unwrap();
+        upsert_cache_entry(&conn, "doc1", "file_a", &ts).unwrap();
+        upsert_cache_entry(&conn, "doc2", "file_b", &ts).unwrap();
+
+        let entries = list_all_cached_entries(&conn).unwrap();
+        assert_eq!(entries.len(), 2);
+        let ids: Vec<&str> = entries.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(ids.contains(&"doc1"));
+        assert!(ids.contains(&"doc2"));
+    }
+
+    #[test]
+    fn test_upsert_preserves_attendees_when_none() {
+        let conn = open_in_memory().unwrap();
+
+        // First upsert with attendees
+        let meta = make_metadata_with_attendees("Meeting", &["Alice", "Bob"], &[]);
+        upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
+
+        let doc = get_document(&conn, "doc1").unwrap().unwrap();
+        assert_eq!(doc.attendees.len(), 2);
+
+        // Second upsert with attendees = None (API omitted them)
+        let meta_no_att = make_test_metadata("Meeting Updated", &[], &[]);
+        assert!(meta_no_att.attendees.is_none());
+        upsert_document(&conn, &meta_no_att, "doc1", "a", None, None).unwrap();
+
+        // Attendees should still be there
+        let doc = get_document(&conn, "doc1").unwrap().unwrap();
+        assert_eq!(doc.attendees.len(), 2);
+        assert_eq!(doc.title.as_deref(), Some("Meeting Updated"));
     }
 
     #[test]
