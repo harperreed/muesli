@@ -113,10 +113,16 @@ fn run() -> Result<()> {
                         };
                         println!("\n{}", body);
                     } else {
-                        eprintln!("Transcript file not found: {}", md_path.display());
+                        return Err(muesli::Error::Filesystem(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("Transcript file not found: {}", md_path.display()),
+                        )));
                     }
                 } else {
-                    eprintln!("No transcript file recorded for this document.");
+                    return Err(muesli::Error::Filesystem(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "No transcript file recorded for this document".to_string(),
+                    )));
                 }
             } else if let Some(ref summary) = doc.summary_text {
                 println!("\n{}", summary);
