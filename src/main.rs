@@ -137,22 +137,7 @@ fn run() -> Result<()> {
             let paths = Paths::new(cli.data_dir)?;
 
             if text {
-                // Text search via Tantivy
-                if !paths.index_dir.exists() {
-                    eprintln!("No index found. Run 'muesli sync' first to build the index.");
-                    std::process::exit(1);
-                }
-                let index = muesli::index::text::open_index(&paths.index_dir)?;
-                let results = muesli::index::text::search(&index, &query, limit)?;
-
-                if results.is_empty() {
-                    println!("No results found for: {}", query);
-                } else {
-                    for (rank, result) in results.iter().enumerate() {
-                        let title = result.title.as_deref().unwrap_or("Untitled");
-                        println!("{}. {} ({})  {}", rank + 1, title, result.date, result.doc_id);
-                    }
-                }
+                run_text_search(&paths, &query, limit)?;
             } else {
                 // Semantic search via embeddings
                 #[cfg(feature = "embeddings")]
@@ -175,48 +160,13 @@ fn run() -> Result<()> {
                         }
                     } else {
                         eprintln!("Note: no vector store found. Falling back to text search.");
-                        if !paths.index_dir.exists() {
-                            eprintln!(
-                                "No index found. Run 'muesli sync' first to build the index."
-                            );
-                            std::process::exit(1);
-                        }
-                        let index =
-                            muesli::index::text::open_index(&paths.index_dir)?;
-                        let results = muesli::index::text::search(&index, &query, limit)?;
-
-                        if results.is_empty() {
-                            println!("No results found for: {}", query);
-                        } else {
-                            for (rank, result) in results.iter().enumerate() {
-                                let title = result.title.as_deref().unwrap_or("Untitled");
-                                println!(
-                                    "{}. {} ({})  {}",
-                                    rank + 1, title, result.date, result.doc_id
-                                );
-                            }
-                        }
+                        run_text_search(&paths, &query, limit)?;
                     }
                 }
                 #[cfg(not(feature = "embeddings"))]
                 {
-                    // Fall back to text search when embeddings feature is not available
                     eprintln!("Note: semantic search requires the 'embeddings' feature. Falling back to text search.");
-                    if !paths.index_dir.exists() {
-                        eprintln!("No index found. Run 'muesli sync' first to build the index.");
-                        std::process::exit(1);
-                    }
-                    let index = muesli::index::text::open_index(&paths.index_dir)?;
-                    let results = muesli::index::text::search(&index, &query, limit)?;
-
-                    if results.is_empty() {
-                        println!("No results found for: {}", query);
-                    } else {
-                        for (rank, result) in results.iter().enumerate() {
-                            let title = result.title.as_deref().unwrap_or("Untitled");
-                            println!("{}. {} ({})  {}", rank + 1, title, result.date, result.doc_id);
-                        }
-                    }
+                    run_text_search(&paths, &query, limit)?;
                 }
             }
         }
@@ -599,6 +549,34 @@ fn find_transcript_by_id(paths: &Paths, doc_id: &str) -> muesli::Result<std::pat
         std::io::ErrorKind::NotFound,
         format!("No transcript found for document ID: {}", doc_id),
     )))
+}
+
+/// Opens the Tantivy text index and runs a search, printing ranked results to stdout.
+#[cfg(feature = "index")]
+fn run_text_search(paths: &Paths, query: &str, limit: usize) -> muesli::Result<()> {
+    if !paths.index_dir.exists() {
+        eprintln!("No index found. Run 'muesli sync' first to build the index.");
+        std::process::exit(1);
+    }
+    let index = muesli::index::text::open_index(&paths.index_dir)?;
+    let results = muesli::index::text::search(&index, query, limit)?;
+
+    if results.is_empty() {
+        println!("No results found for: {}", query);
+    } else {
+        for (rank, result) in results.iter().enumerate() {
+            let title = result.title.as_deref().unwrap_or("Untitled");
+            println!(
+                "{}. {} ({})  {}",
+                rank + 1,
+                title,
+                result.date,
+                result.doc_id
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Creates an API client with auth and throttle configuration from CLI flags.
