@@ -15,80 +15,119 @@ Muesli syncs and searches Granola meeting transcripts locally. It downloads tran
 - Index: `~/.local/share/muesli/index/`
 - Database: `~/.local/share/muesli/muesli.duckdb`
 
-## Commands
+## Core Agent Workflow
 
-### Sync transcripts from Granola
+These four commands are the primary workflow for an agent working with meeting transcripts:
+
+### 1. Sync — ensure data is up to date
 
 ```bash
-muesli sync              # Download new/updated transcripts
-muesli sync --reindex    # Reindex all without re-downloading
+muesli sync                # Download new/updated transcripts
+muesli sync --force        # Force re-sync, ignoring cache timestamps
+muesli sync --reindex      # Reindex all without re-downloading
 ```
 
-Auth tokens are auto-detected from the Granola app on macOS.
+Auth tokens are auto-detected from the Granola app on macOS. Run sync before searching if you need the latest meetings.
 
-### Search transcripts
+### 2. Local — see what meetings exist
+
+```bash
+muesli local               # List all meetings from local DB (no auth needed)
+```
+
+Output: tab-separated `doc_id`, `date`, `title` (sorted newest first, matches `list`). Pipe to `head` for recent meetings or `grep` for a date range:
+
+```bash
+muesli local | head -10                   # Last 10 meetings
+muesli local | grep "2026-02"             # All February 2026 meetings
+```
+
+### 3. Find — search for relevant meetings
+
+```bash
+muesli find "quarterly planning"          # Semantic search (default)
+muesli find "quarterly planning" --text   # Full-text search
+muesli find "budget" -n 5                 # Limit results (default: 10)
+```
+
+Output: numbered list with title, date, score, and doc ID. Use the doc ID with `show`.
+
+### 4. Show — view a meeting's content
+
+```bash
+muesli show <DOC_ID>                      # Summary, metadata, attendees
+muesli show <DOC_ID> --full               # Full transcript
+```
+
+Displays title, date, duration, attendees, labels, and summary (or full transcript with `--full`). Works offline.
+
+## Additional Commands
+
+### Search (full-text, returns file paths)
 
 ```bash
 muesli search "quarterly planning"              # Full-text BM25 search
-muesli search --semantic "team collaboration"    # Meaning-based semantic search
-muesli search "budget" -n 5                      # Limit results
+muesli search --semantic "team collaboration"    # Semantic search
+muesli search "budget" -n 5                      # Limit results (default: 10)
 ```
 
-Output format: numbered list with title, date, and file path.
+Output: numbered list with title, date, and file path. Use `find` instead when you need doc IDs for `show`.
 
-### Find documents (returns doc IDs)
+### List (API-based)
 
 ```bash
-muesli find "quarterly planning"                 # Semantic search (default)
-muesli find "quarterly planning" --text          # Full-text search
-muesli find "budget" -n 5                        # Limit results
+muesli list                               # List from API (requires auth)
 ```
 
-Output format: numbered list with title, date, score, and doc ID. Use with `show` to view details.
+Output: tab-separated `doc_id`, `date`, `title`. Prefer `local` for offline/faster access.
 
-### List all transcripts
-
-```bash
-muesli list                                      # List from API (requires auth)
-muesli local                                     # List from local DB (no auth needed)
-```
-
-`list` output: tab-separated `doc_id`, `date`, `title`.
-`local` output: tab-separated `date`, `doc_id`, `title` (sorted oldest first).
-
-### Show a document
+### Fetch a document
 
 ```bash
-muesli show <DOC_ID>                             # Show summary/metadata
-muesli show <DOC_ID> --full                      # Show full transcript
-```
-
-Displays title, date, duration, attendees, labels, and summary (or full transcript with `--full`). No API key needed.
-
-### Read a transcript file directly
-
-Transcripts are markdown files. Read them directly:
-
-```bash
-cat ~/.local/share/muesli/transcripts/2025-06-20_pricing-discussion.md
+muesli fetch <DOC_ID>                     # Fetch a specific document by ID from API
 ```
 
 ### Query by metadata
 
 ```bash
-muesli query --attendee "Alice"                  # Filter by attendee
-muesli query --label "Planning"                  # Filter by label
-muesli query --title "standup"                   # Search by title
+muesli query --attendee "Alice"           # Filter by attendee
+muesli query --label "Planning"           # Filter by label
+muesli query --title "standup"            # Search by title
+muesli query --title "standup" -n 10      # Limit results (default: 20)
+```
+
+### Stats
+
+```bash
+muesli stats                              # Meeting statistics from local DB
 ```
 
 ### Summarize a transcript
 
 ```bash
-muesli summarize <DOC_ID>          # Print summary to stdout
-muesli summarize <DOC_ID> --save   # Save to summaries directory
+muesli summarize <DOC_ID>                 # Print summary to stdout
+muesli summarize <DOC_ID> --save          # Save to summaries directory
 ```
 
 Requires an OpenAI API key (`muesli set-api-key`).
+
+### Configuration
+
+```bash
+muesli set-api-key                        # Store OpenAI API key in keychain
+muesli set-config --show                  # Show current summarization config
+muesli set-config --model gpt-4o          # Set summarization model
+muesli set-config --prompt-file path.txt  # Set custom summarization prompt
+```
+
+### Utility
+
+```bash
+muesli open                               # Open data directory in Finder
+muesli fix-dates                          # Fix file mod dates to match meeting dates
+muesli tui                                # Interactive terminal dashboard
+muesli mcp                                # Start MCP server for AI integration
+```
 
 ## Transcript Format
 
@@ -124,10 +163,68 @@ muesli show <DOC_ID> --full                     # View full transcript
 ### Find meetings in a date range
 
 ```bash
-muesli local | grep "2025-06"                  # All June 2025 meetings (no auth)
-muesli list | grep "2025-06"                   # Same, via API
+muesli local | grep "2026-02"                  # All February 2026 meetings
 ```
+
+### Read a transcript file directly
+
+Transcripts are markdown files at `~/.local/share/muesli/transcripts/`. Read them directly if needed.
 
 ### Offline usage
 
-Local commands (`local`, `show`, `find`, `search`, `query`, `stats`) work without API access. Copy the data directory (`~/.local/share/muesli/`) to another machine and use `--data-dir` to point to it.
+Local commands (`local`, `show`, `find`, `search`, `query`, `stats`) work without API access.
+
+### Syncing to another machine with rsync
+
+You can copy the muesli data directory to another machine so it can use all offline commands without Granola API access or a Granola account. The source machine must have already run `muesli sync`.
+
+**Full sync (all features including search and embeddings):**
+
+```bash
+rsync -av --delete \
+  ~/.local/share/muesli/ \
+  user@remote:~/.local/share/muesli/
+```
+
+**Minimal sync (just transcripts, database, and index — skip large model files):**
+
+```bash
+rsync -av --delete \
+  --exclude='models/' \
+  --exclude='raw/' \
+  --exclude='tmp/' \
+  ~/.local/share/muesli/ \
+  user@remote:~/.local/share/muesli/
+```
+
+**What each directory contains:**
+
+| Directory | Size | Purpose | Needed for |
+|---|---|---|---|
+| `transcripts/` | ~25 MB | Markdown files | `show --full`, direct file reads |
+| `muesli.duckdb` | ~6 MB | Document metadata, attendees, labels | `local`, `show`, `query`, `stats` |
+| `index/` | ~16 MB | Tantivy full-text index + vector store | `find`, `search` |
+| `raw/` | ~94 MB | Raw JSON from API | Rebuilding transcripts (optional) |
+| `models/` | ~128 MB | ONNX embedding model | Semantic search (downloaded on first sync) |
+| `summaries/` | small | Generated summaries | `summarize --save` output |
+| `tmp/` | — | Temp files during sync | Not needed |
+
+**Using a custom data directory on the remote:**
+
+```bash
+# Sync to a non-default location
+rsync -av --delete ~/.local/share/muesli/ user@remote:~/muesli-data/
+
+# On the remote, point muesli to it
+muesli --data-dir ~/muesli-data local
+muesli --data-dir ~/muesli-data show <DOC_ID>
+```
+
+**Keeping it up to date (run after each sync):**
+
+```bash
+muesli sync && rsync -av --delete --exclude='models/' --exclude='tmp/' \
+  ~/.local/share/muesli/ user@remote:~/.local/share/muesli/
+```
+
+The remote machine needs `muesli` installed but does not need a Granola account or API token. If you exclude `models/`, semantic search (`muesli find`) will automatically fall back to text search.

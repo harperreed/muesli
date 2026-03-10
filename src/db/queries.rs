@@ -95,6 +95,12 @@ fn upsert_document_inner(
     let updated_at = meta.updated_at.as_ref().map(fmt_ts);
     let synced_at = fmt_ts(&Utc::now());
 
+    // Delete child rows first so the document upsert doesn't hit FK violations
+    // (DuckDB's ON CONFLICT may internally delete+insert, triggering FK checks)
+    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
+
     // Upsert the document row
     conn.execute(
         "INSERT INTO documents (doc_id, title, created_at, updated_at, duration_seconds, filename, synced_at, notes, summary_text)
@@ -119,9 +125,6 @@ fn upsert_document_inner(
             summary_text,
         ],
     )?;
-
-    // Replace attendees: delete old, insert new
-    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
     if let Some(attendees) = &meta.attendees {
         for att in attendees.iter().filter(|a| a.is_person()) {
             let is_creator = meta
@@ -167,8 +170,7 @@ fn upsert_document_inner(
         }
     }
 
-    // Replace labels
-    conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
+    // Insert labels
     for label in &meta.labels {
         conn.execute(
             "INSERT INTO labels (doc_id, label) VALUES (?, ?)",
@@ -176,8 +178,7 @@ fn upsert_document_inner(
         )?;
     }
 
-    // Replace participants
-    conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
+    // Insert participants
     for name in &meta.participants {
         conn.execute(
             "INSERT INTO participants (doc_id, name) VALUES (?, ?)",
@@ -414,23 +415,13 @@ pub fn list_all_cached_entries(conn: &Connection) -> Result<Vec<(String, String)
 }
 
 /// Delete a document and all related rows from the database.
-/// Wrapped in a transaction so partial deletes cannot occur.
+/// DuckDB doesn't support CASCADE, so we delete child rows first.
 pub fn delete_document(conn: &Connection, doc_id: &str) -> Result<()> {
-    // DuckDB doesn't support CASCADE, so delete related rows first
-    conn.execute_batch("BEGIN TRANSACTION")?;
-    let result = (|| -> Result<()> {
-        conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
-        conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
-        conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
-        conn.execute("DELETE FROM documents WHERE doc_id = ?", params![doc_id])?;
-        conn.execute("DELETE FROM sync_cache WHERE doc_id = ?", params![doc_id])?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = conn.execute_batch("ROLLBACK");
-        return result;
-    }
-    conn.execute_batch("COMMIT")?;
+    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM documents WHERE doc_id = ?", params![doc_id])?;
+    conn.execute("DELETE FROM sync_cache WHERE doc_id = ?", params![doc_id])?;
     Ok(())
 }
 
