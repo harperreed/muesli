@@ -57,8 +57,7 @@ fn run() -> Result<()> {
         Some(muesli::cli::Commands::Local) => {
             let paths = Paths::new(cli.data_dir)?;
             let conn = muesli::db::connection::open_or_create(&paths.db_path)?;
-            let mut docs = muesli::db::queries::list_documents(&conn)?;
-            docs.reverse();
+            let docs = muesli::db::queries::list_documents(&conn)?;
 
             if docs.is_empty() {
                 eprintln!("No documents found. Run 'muesli sync' first.");
@@ -66,7 +65,7 @@ fn run() -> Result<()> {
                 for doc in &docs {
                     let date = doc.created_at.format("%Y-%m-%d");
                     let title = doc.title.as_deref().unwrap_or("Untitled");
-                    println!("{}\t{}\t{}", date, doc.doc_id, title);
+                    println!("{}\t{}\t{}", doc.doc_id, date, title);
                 }
             }
         }
@@ -153,22 +152,43 @@ fn run() -> Result<()> {
                 #[cfg(feature = "embeddings")]
                 {
                     let metadata_path = paths.index_dir.join("vectors.meta.json");
-                    if !metadata_path.exists() {
-                        eprintln!("No vector store found. Run 'muesli sync' first to generate embeddings.");
-                        std::process::exit(1);
-                    }
+                    if metadata_path.exists() {
+                        let results =
+                            muesli::embeddings::semantic_search(&paths, &query, limit)?;
 
-                    let results = muesli::embeddings::semantic_search(&paths, &query, limit)?;
-
-                    if results.is_empty() {
-                        println!("No results found for: {}", query);
+                        if results.is_empty() {
+                            println!("No results found for: {}", query);
+                        } else {
+                            for (rank, result) in results.iter().enumerate() {
+                                let title = result.title.as_deref().unwrap_or("Untitled");
+                                println!(
+                                    "{}. {} ({}) [score: {:.3}]  {}",
+                                    rank + 1, title, result.date, result.score, result.doc_id
+                                );
+                            }
+                        }
                     } else {
-                        for (rank, result) in results.iter().enumerate() {
-                            let title = result.title.as_deref().unwrap_or("Untitled");
-                            println!(
-                                "{}. {} ({}) [score: {:.3}]  {}",
-                                rank + 1, title, result.date, result.score, result.doc_id
+                        eprintln!("Note: no vector store found. Falling back to text search.");
+                        if !paths.index_dir.exists() {
+                            eprintln!(
+                                "No index found. Run 'muesli sync' first to build the index."
                             );
+                            std::process::exit(1);
+                        }
+                        let index =
+                            muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                        let results = muesli::index::text::search(&index, &query, limit)?;
+
+                        if results.is_empty() {
+                            println!("No results found for: {}", query);
+                        } else {
+                            for (rank, result) in results.iter().enumerate() {
+                                let title = result.title.as_deref().unwrap_or("Untitled");
+                                println!(
+                                    "{}. {} ({})  {}",
+                                    rank + 1, title, result.date, result.doc_id
+                                );
+                            }
                         }
                     }
                 }

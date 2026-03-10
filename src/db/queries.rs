@@ -46,11 +46,13 @@ fn fmt_ts(dt: &DateTime<Utc>) -> String {
 
 /// Parse a DocumentRow from a DuckDB row (columns: doc_id, title, created_at, duration_seconds, filename).
 fn parse_document_row(row: &duckdb::Row<'_>) -> std::result::Result<DocumentRow, duckdb::Error> {
-    let created_at_str: String = row.get(2)?;
+    let created_at_opt: Option<String> = row.get(2)?;
     Ok(DocumentRow {
         doc_id: row.get(0)?,
         title: row.get(1)?,
-        created_at: parse_ts(&created_at_str),
+        created_at: created_at_opt
+            .map(|s| parse_ts(&s))
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH),
         duration_seconds: row.get(3)?,
         filename: row.get(4)?,
     })
@@ -268,11 +270,13 @@ pub fn get_document(conn: &Connection, doc_id: &str) -> Result<Option<DocumentDe
          FROM documents WHERE doc_id = ?",
     )?;
     let mut rows = stmt.query_map(params![doc_id], |row| {
-        let created_at_str: String = row.get(2)?;
+        let created_at_opt: Option<String> = row.get(2)?;
         Ok(DocumentDetail {
             doc_id: row.get(0)?,
             title: row.get(1)?,
-            created_at: parse_ts(&created_at_str),
+            created_at: created_at_opt
+                .map(|s| parse_ts(&s))
+                .unwrap_or(chrono::DateTime::UNIX_EPOCH),
             duration_seconds: row.get(3)?,
             filename: row.get(4)?,
             summary_text: row.get(5)?,

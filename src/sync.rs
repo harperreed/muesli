@@ -158,6 +158,7 @@ pub fn sync_all(
 
     let mut synced = 0;
     let mut skipped = 0;
+    let mut deleted = 0;
 
     #[cfg(feature = "embeddings")]
     let mut embedded = 0;
@@ -443,7 +444,6 @@ pub fn sync_all(
     #[cfg(feature = "storage")]
     {
         let cached_entries = crate::db::queries::list_all_cached_entries(&db_conn)?;
-        let mut deleted = 0;
         for (doc_id, filename) in &cached_entries {
             if remote_ids.contains(doc_id.as_str()) {
                 continue;
@@ -485,7 +485,6 @@ pub fn sync_all(
             .filter(|id| !remote_ids.contains(id.as_str()))
             .cloned()
             .collect();
-        let mut deleted = 0;
         for doc_id in &stale_ids {
             if let Some(entry) = cache.remove(doc_id) {
                 let md_path = paths.transcripts_dir.join(format!("{}.md", entry.filename));
@@ -522,10 +521,10 @@ pub fn sync_all(
     // Commit all indexed documents in one batch (feature-gated)
     #[cfg(feature = "index")]
     {
-        if synced > 0 {
+        if synced > 0 || deleted > 0 {
             if let Err(e) = writer.commit() {
                 eprintln!("Warning: Failed to commit index changes: {}", e);
-            } else {
+            } else if synced > 0 {
                 println!("Indexed {} documents", synced);
             }
         }
