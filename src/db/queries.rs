@@ -301,16 +301,16 @@ pub fn get_document(conn: &Connection, doc_id: &str) -> Result<Option<DocumentDe
     )?;
     let att_rows = att_stmt.query_map(params![doc_id], |row| row.get::<_, String>(0))?;
     for name in att_rows {
-        doc.attendees.push(name.map_err(|e| crate::Error::Database(e.to_string()))?);
+        doc.attendees
+            .push(name.map_err(|e| crate::Error::Database(e.to_string()))?);
     }
 
     // Fetch labels
-    let mut lbl_stmt = conn.prepare(
-        "SELECT label FROM labels WHERE doc_id = ? ORDER BY label",
-    )?;
+    let mut lbl_stmt = conn.prepare("SELECT label FROM labels WHERE doc_id = ? ORDER BY label")?;
     let lbl_rows = lbl_stmt.query_map(params![doc_id], |row| row.get::<_, String>(0))?;
     for label in lbl_rows {
-        doc.labels.push(label.map_err(|e| crate::Error::Database(e.to_string()))?);
+        doc.labels
+            .push(label.map_err(|e| crate::Error::Database(e.to_string()))?);
     }
 
     Ok(Some(doc))
@@ -1257,13 +1257,7 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let meta = make_metadata_with_attendees("Meeting", &["Alice"], &["Tag"]);
         upsert_document(&conn, &meta, "doc1", "a", None, None).unwrap();
-        upsert_cache_entry(
-            &conn,
-            "doc1",
-            "a",
-            &"2025-10-28T15:04:05Z".parse().unwrap(),
-        )
-        .unwrap();
+        upsert_cache_entry(&conn, "doc1", "a", &"2025-10-28T15:04:05Z".parse().unwrap()).unwrap();
 
         // Verify data exists
         assert!(get_document(&conn, "doc1").unwrap().is_some());

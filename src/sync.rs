@@ -438,8 +438,7 @@ pub fn sync_all(
     ));
 
     // Detect and remove locally-cached documents that no longer exist on the server
-    let remote_ids: std::collections::HashSet<&str> =
-        docs.iter().map(|d| d.id.as_str()).collect();
+    let remote_ids: std::collections::HashSet<&str> = docs.iter().map(|d| d.id.as_str()).collect();
 
     #[cfg(feature = "storage")]
     {

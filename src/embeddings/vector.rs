@@ -295,16 +295,24 @@ mod tests {
     #[test]
     fn test_remove_document_first() {
         let mut store = VectorStore::new(3);
-        store.add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0])).unwrap();
-        store.add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0])).unwrap();
-        store.add_document("doc3".into(), create_normalized_vector(&[0.0, 0.0, 1.0])).unwrap();
+        store
+            .add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0]))
+            .unwrap();
+        store
+            .add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0]))
+            .unwrap();
+        store
+            .add_document("doc3".into(), create_normalized_vector(&[0.0, 0.0, 1.0]))
+            .unwrap();
 
         assert!(store.remove_document("doc1"));
         assert_eq!(store.len(), 2);
         assert_eq!(store.vectors.len(), 6); // 2 docs * 3 dims
 
         // Search should still find remaining docs correctly
-        let results = store.search(&create_normalized_vector(&[0.0, 1.0, 0.0]), 3).unwrap();
+        let results = store
+            .search(&create_normalized_vector(&[0.0, 1.0, 0.0]), 3)
+            .unwrap();
         assert_eq!(results[0].0, "doc2");
         assert!(results[0].1 > 0.99);
     }
@@ -312,38 +320,56 @@ mod tests {
     #[test]
     fn test_remove_document_middle() {
         let mut store = VectorStore::new(3);
-        store.add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0])).unwrap();
-        store.add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0])).unwrap();
-        store.add_document("doc3".into(), create_normalized_vector(&[0.0, 0.0, 1.0])).unwrap();
+        store
+            .add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0]))
+            .unwrap();
+        store
+            .add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0]))
+            .unwrap();
+        store
+            .add_document("doc3".into(), create_normalized_vector(&[0.0, 0.0, 1.0]))
+            .unwrap();
 
         assert!(store.remove_document("doc2"));
         assert_eq!(store.len(), 2);
 
         // Both remaining docs should be searchable with correct vectors
-        let r1 = store.search(&create_normalized_vector(&[1.0, 0.0, 0.0]), 1).unwrap();
+        let r1 = store
+            .search(&create_normalized_vector(&[1.0, 0.0, 0.0]), 1)
+            .unwrap();
         assert_eq!(r1[0].0, "doc1");
-        let r3 = store.search(&create_normalized_vector(&[0.0, 0.0, 1.0]), 1).unwrap();
+        let r3 = store
+            .search(&create_normalized_vector(&[0.0, 0.0, 1.0]), 1)
+            .unwrap();
         assert_eq!(r3[0].0, "doc3");
     }
 
     #[test]
     fn test_remove_document_last() {
         let mut store = VectorStore::new(3);
-        store.add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0])).unwrap();
-        store.add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0])).unwrap();
+        store
+            .add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0]))
+            .unwrap();
+        store
+            .add_document("doc2".into(), create_normalized_vector(&[0.0, 1.0, 0.0]))
+            .unwrap();
 
         assert!(store.remove_document("doc2"));
         assert_eq!(store.len(), 1);
         assert_eq!(store.vectors.len(), 3);
 
-        let results = store.search(&create_normalized_vector(&[1.0, 0.0, 0.0]), 1).unwrap();
+        let results = store
+            .search(&create_normalized_vector(&[1.0, 0.0, 0.0]), 1)
+            .unwrap();
         assert_eq!(results[0].0, "doc1");
     }
 
     #[test]
     fn test_remove_document_nonexistent() {
         let mut store = VectorStore::new(3);
-        store.add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0])).unwrap();
+        store
+            .add_document("doc1".into(), create_normalized_vector(&[1.0, 0.0, 0.0]))
+            .unwrap();
 
         assert!(!store.remove_document("missing"));
         assert_eq!(store.len(), 1);
