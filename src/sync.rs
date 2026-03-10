@@ -437,9 +437,6 @@ pub fn sync_all(
     ));
 
     // Detect and remove locally-cached documents that no longer exist on the server
-    // TODO: Also remove deleted docs from the Tantivy search index and vector store.
-    // Currently a full re-sync rebuilds the index, but stale entries can appear in
-    // search results until then.
     let remote_ids: std::collections::HashSet<&str> =
         docs.iter().map(|d| d.id.as_str()).collect();
 
@@ -464,6 +461,16 @@ pub fn sync_all(
             }
             // Remove from database
             crate::db::queries::delete_document(&db_conn, doc_id)?;
+            // Remove from search index
+            #[cfg(feature = "index")]
+            {
+                let _ = text::delete_document_batch(&mut writer, &index, doc_id);
+            }
+            // Remove from vector store
+            #[cfg(feature = "embeddings")]
+            {
+                vector_store.remove_document(doc_id);
+            }
             deleted += 1;
         }
         if deleted > 0 {
@@ -492,6 +499,16 @@ pub fn sync_all(
                     if json_path.exists() {
                         std::fs::remove_file(&json_path)?;
                     }
+                }
+                // Remove from search index
+                #[cfg(feature = "index")]
+                {
+                    let _ = text::delete_document_batch(&mut writer, &index, doc_id);
+                }
+                // Remove from vector store
+                #[cfg(feature = "embeddings")]
+                {
+                    vector_store.remove_document(doc_id);
                 }
                 deleted += 1;
             }

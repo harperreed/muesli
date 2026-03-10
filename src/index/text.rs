@@ -131,6 +131,22 @@ pub fn index_markdown_batch(
     Ok(())
 }
 
+/// Deletes a document from the index by doc_id using an existing writer.
+/// Does not commit - caller must call writer.commit() when ready.
+pub fn delete_document_batch(
+    writer: &mut tantivy::IndexWriter,
+    index: &Index,
+    doc_id: &str,
+) -> Result<()> {
+    let schema = index.schema();
+    let doc_id_field = schema
+        .get_field("doc_id")
+        .map_err(|e| Error::Indexing(format!("Missing doc_id field: {}", e)))?;
+    let term = Term::from_field_text(doc_id_field, doc_id);
+    writer.delete_term(term);
+    Ok(())
+}
+
 /// Searches the index using BM25 ranking
 ///
 /// Searches both title and body fields with the given query string.

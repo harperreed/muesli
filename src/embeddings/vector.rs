@@ -141,6 +141,27 @@ impl VectorStore {
         })
     }
 
+    /// Remove a document and its vector by doc_id.
+    /// Returns true if the document was found and removed.
+    pub fn remove_document(&mut self, doc_id: &str) -> bool {
+        if let Some(pos) = self.mapping.iter().position(|m| m.doc_id == doc_id) {
+            let offset = self.mapping[pos].offset;
+            // Remove the vector data
+            self.vectors.drain(offset..offset + self.dim);
+            // Remove the mapping entry
+            self.mapping.remove(pos);
+            // Adjust offsets for all subsequent mappings
+            for m in &mut self.mapping {
+                if m.offset > offset {
+                    m.offset -= self.dim;
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.mapping.len()
     }
