@@ -410,13 +410,23 @@ pub fn list_all_cached_entries(conn: &Connection) -> Result<Vec<(String, String)
 }
 
 /// Delete a document and all related rows from the database.
+/// Wrapped in a transaction so partial deletes cannot occur.
 pub fn delete_document(conn: &Connection, doc_id: &str) -> Result<()> {
     // DuckDB doesn't support CASCADE, so delete related rows first
-    conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
-    conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
-    conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
-    conn.execute("DELETE FROM documents WHERE doc_id = ?", params![doc_id])?;
-    conn.execute("DELETE FROM sync_cache WHERE doc_id = ?", params![doc_id])?;
+    conn.execute_batch("BEGIN TRANSACTION")?;
+    let result = (|| -> Result<()> {
+        conn.execute("DELETE FROM attendees WHERE doc_id = ?", params![doc_id])?;
+        conn.execute("DELETE FROM labels WHERE doc_id = ?", params![doc_id])?;
+        conn.execute("DELETE FROM participants WHERE doc_id = ?", params![doc_id])?;
+        conn.execute("DELETE FROM documents WHERE doc_id = ?", params![doc_id])?;
+        conn.execute("DELETE FROM sync_cache WHERE doc_id = ?", params![doc_id])?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = conn.execute_batch("ROLLBACK");
+        return result;
+    }
+    conn.execute_batch("COMMIT")?;
     Ok(())
 }
 

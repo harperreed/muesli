@@ -437,6 +437,9 @@ pub fn sync_all(
     ));
 
     // Detect and remove locally-cached documents that no longer exist on the server
+    // TODO: Also remove deleted docs from the Tantivy search index and vector store.
+    // Currently a full re-sync rebuilds the index, but stale entries can appear in
+    // search results until then.
     let remote_ids: std::collections::HashSet<&str> =
         docs.iter().map(|d| d.id.as_str()).collect();
 

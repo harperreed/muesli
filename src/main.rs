@@ -102,7 +102,17 @@ fn run() -> Result<()> {
                     let md_path = paths.transcripts_dir.join(format!("{}.md", filename));
                     if md_path.exists() {
                         let content = std::fs::read_to_string(&md_path)?;
-                        println!("\n{}", content);
+                        // Strip YAML frontmatter if present
+                        let body = if content.starts_with("---\n") {
+                            content
+                                .splitn(3, "---\n")
+                                .nth(2)
+                                .unwrap_or(&content)
+                                .to_string()
+                        } else {
+                            content
+                        };
+                        println!("\n{}", body);
                     } else {
                         eprintln!("Transcript file not found: {}", md_path.display());
                     }
@@ -164,8 +174,23 @@ fn run() -> Result<()> {
                 }
                 #[cfg(not(feature = "embeddings"))]
                 {
-                    eprintln!("Semantic search requires the 'embeddings' feature. Use --text for text search.");
-                    std::process::exit(1);
+                    // Fall back to text search when embeddings feature is not available
+                    eprintln!("Note: semantic search requires the 'embeddings' feature. Falling back to text search.");
+                    if !paths.index_dir.exists() {
+                        eprintln!("No index found. Run 'muesli sync' first to build the index.");
+                        std::process::exit(1);
+                    }
+                    let index = muesli::index::text::create_or_open_index(&paths.index_dir)?;
+                    let results = muesli::index::text::search(&index, &query, limit)?;
+
+                    if results.is_empty() {
+                        println!("No results found for: {}", query);
+                    } else {
+                        for (rank, result) in results.iter().enumerate() {
+                            let title = result.title.as_deref().unwrap_or("Untitled");
+                            println!("{}. {} ({})  {}", rank + 1, title, result.date, result.doc_id);
+                        }
+                    }
                 }
             }
         }
