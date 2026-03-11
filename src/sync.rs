@@ -172,7 +172,7 @@ pub fn sync_all(
             } else {
                 match crate::db::queries::get_cache_entry(&db_conn, &doc_summary.id) {
                     Ok(Some(entry)) => {
-                        let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+                        let remote_ts = doc_summary.best_timestamp();
                         let ts_changed = remote_ts > entry.updated_at;
                         // Re-sync if the API has a summary but the DB doesn't
                         let needs_summary = doc_summary.enhanced_notes().is_some()
@@ -188,7 +188,7 @@ pub fn sync_all(
         let should_update = if force {
             true
         } else if let Some(cache_entry) = cache.get(&doc_summary.id) {
-            let remote_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+            let remote_ts = doc_summary.best_timestamp();
             remote_ts > cache_entry.updated_at
         } else {
             true
@@ -216,7 +216,7 @@ pub fn sync_all(
 
         // Backfill fields from doc_summary when metadata lacks them
         if meta.created_at.is_none() {
-            meta.created_at = Some(doc_summary.created_at);
+            meta.created_at = Some(doc_summary.best_timestamp());
         }
         if meta.title.is_none() {
             meta.title = doc_summary.title.clone();
@@ -249,7 +249,9 @@ pub fn sync_all(
             let full_md = format!("---\n{}---\n\n{}", md.frontmatter_yaml, md.body);
 
             // Compute filename (may have changed if title changed)
-            let created = meta.created_at.unwrap_or(doc_summary.created_at);
+            let created = meta
+                .created_at
+                .unwrap_or_else(|| doc_summary.best_timestamp());
             let date = created.format("%Y-%m-%d").to_string();
             let slug = slugify(meta.title.as_deref().unwrap_or("untitled"));
             let base_filename = format!("{}_{}", date, slug);
@@ -327,7 +329,7 @@ pub fn sync_all(
 
             // Update cache - CRITICAL: store the same timestamp we compare against
             // (doc_summary.updated_at, NOT meta.updated_at - they can differ!)
-            let stored_ts = doc_summary.updated_at.unwrap_or(doc_summary.created_at);
+            let stored_ts = doc_summary.best_timestamp();
 
             #[cfg(feature = "storage")]
             {

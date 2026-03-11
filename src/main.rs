@@ -48,7 +48,7 @@ fn run() -> Result<()> {
             let docs = client.list_documents()?;
 
             for doc in docs {
-                let date = doc.created_at.format("%Y-%m-%d");
+                let date = doc.best_timestamp().format("%Y-%m-%d");
                 let title = doc.title.as_deref().unwrap_or("Untitled");
                 println!("{}\t{}\t{}", doc.id, date, title);
             }

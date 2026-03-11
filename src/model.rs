@@ -9,7 +9,8 @@ pub struct DocumentSummary {
     pub id: String,
     #[serde(default)]
     pub title: Option<String>,
-    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub created_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub updated_at: Option<DateTime<Utc>>,
     /// User's manual notes — ProseMirror doc stored as raw Value to tolerate
@@ -23,6 +24,11 @@ pub struct DocumentSummary {
 }
 
 impl DocumentSummary {
+    /// Best-effort timestamp for display and sync bookkeeping.
+    pub fn best_timestamp(&self) -> DateTime<Utc> {
+        self.created_at.or(self.updated_at).unwrap_or_else(Utc::now)
+    }
+
     /// Extract user notes from the `notes` field.
     /// Falls back to `last_viewed_panel.content` only when `notes` is present
     /// but malformed (e.g. ProseMirror `content` is a map instead of an array).
@@ -73,6 +79,10 @@ mod tests {
         assert_eq!(doc.id, "doc123");
         assert!(doc.title.is_none());
         assert!(doc.updated_at.is_none());
+        assert_eq!(
+            doc.created_at,
+            Some("2025-10-28T15:04:05Z".parse().unwrap())
+        );
     }
 
     #[test]
@@ -88,6 +98,31 @@ mod tests {
         assert_eq!(doc.id, "doc123");
         assert_eq!(doc.title.as_deref(), Some("Planning Meeting"));
         assert!(doc.updated_at.is_some());
+        assert_eq!(
+            doc.created_at,
+            Some("2025-10-28T15:04:05Z".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn test_document_summary_missing_created_at() {
+        let json = r#"{
+            "id": "doc123",
+            "title": "Planning Meeting",
+            "updated_at": "2025-10-29T01:23:45Z"
+        }"#;
+        let doc: DocumentSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.id, "doc123");
+        assert_eq!(doc.title.as_deref(), Some("Planning Meeting"));
+        assert!(doc.created_at.is_none());
+        assert_eq!(
+            doc.updated_at,
+            Some("2025-10-29T01:23:45Z".parse().unwrap())
+        );
+        assert_eq!(
+            doc.best_timestamp(),
+            "2025-10-29T01:23:45Z".parse::<DateTime<Utc>>().unwrap()
+        );
     }
 
     #[test]
