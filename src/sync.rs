@@ -158,6 +158,7 @@ pub fn sync_all(
 
     let mut synced = 0;
     let mut skipped = 0;
+    let mut failed = 0;
     let mut deleted = 0;
 
     #[cfg(feature = "embeddings")]
@@ -208,9 +209,36 @@ pub fn sync_all(
             continue;
         }
 
-        // Fetch metadata and transcript from API, keeping raw responses
-        let meta_resp = client.get_metadata_with_raw(&doc_summary.id)?;
-        let transcript_resp = client.get_transcript_with_raw(&doc_summary.id)?;
+        // Fetch metadata and transcript from API, keeping raw responses.
+        // Individual document failures are non-fatal — skip and continue.
+        let meta_resp = match client.get_metadata_with_raw(&doc_summary.id) {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!(
+                    "Warning: skipping doc {} ({}): {}",
+                    doc_summary.id,
+                    doc_summary.title.as_deref().unwrap_or("untitled"),
+                    e
+                );
+                failed += 1;
+                pb.inc(1);
+                continue;
+            }
+        };
+        let transcript_resp = match client.get_transcript_with_raw(&doc_summary.id) {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!(
+                    "Warning: skipping doc {} ({}): transcript fetch failed: {}",
+                    doc_summary.id,
+                    doc_summary.title.as_deref().unwrap_or("untitled"),
+                    e
+                );
+                failed += 1;
+                pb.inc(1);
+                continue;
+            }
+        };
         let mut meta = meta_resp.parsed;
         let transcript = transcript_resp.parsed;
 
@@ -433,11 +461,19 @@ pub fn sync_all(
     }
 
     pb.finish_with_message(format!(
-        "synced {} docs ({} new/updated, {} skipped)",
+        "synced {} docs ({} new/updated, {} skipped, {} failed)",
         docs.len(),
         synced,
-        skipped
+        skipped,
+        failed
     ));
+
+    if failed > 0 {
+        eprintln!(
+            "Warning: {} document(s) could not be synced due to API/parse errors",
+            failed
+        );
+    }
 
     // Detect and remove locally-cached documents that no longer exist on the server
     let remote_ids: std::collections::HashSet<&str> = docs.iter().map(|d| d.id.as_str()).collect();

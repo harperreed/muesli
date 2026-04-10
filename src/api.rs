@@ -117,8 +117,8 @@ impl ApiClient {
         let parsed = serde_json::from_str(&raw).map_err(|e| {
             eprintln!("Failed to parse response from {}: {}", endpoint, e);
             eprintln!(
-                "Response body (first 500 chars): {}",
-                truncate_str(&raw, 500)
+                "Response body (first 2000 chars): {}",
+                truncate_str(&raw, 2000)
             );
             Error::Parse(e)
         })?;
@@ -191,8 +191,8 @@ impl ApiClient {
         let parsed = serde_json::from_str(&raw).map_err(|e| {
             eprintln!("Failed to parse response from {}: {}", url, e);
             eprintln!(
-                "Response body (first 500 chars): {}",
-                truncate_str(&raw, 500)
+                "Response body (first 2000 chars): {}",
+                truncate_str(&raw, 2000)
             );
             Error::Parse(e)
         })?;
