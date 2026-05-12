@@ -278,9 +278,10 @@ Muesli checks for credentials in this order:
 
 1. `--token` flag (explicit override)
 2. `BEARER_TOKEN` environment variable
-3. `~/Library/Application Support/Granola/supabase.json` (auto-detected from Granola desktop app)
+3. `~/Library/Application Support/Granola/supabase.json.enc` (decrypted on the fly using the macOS Keychain)
+4. `~/Library/Application Support/Granola/supabase.json` (plaintext fallback for older Granola builds)
 
-> **Note:** Recent Granola builds encrypt the session at `supabase.json.enc` via Electron `safeStorage`. muesli does not yet decrypt this file. When the encrypted file is present, auto-detection is disabled and you must provide a token via `--token` or `BEARER_TOKEN`.
+Newer Granola builds encrypt the session at rest. The first auto-detected sync prompts macOS to grant Keychain access to the `Granola Safe Storage` entry — clicking "Always Allow" makes subsequent runs non-interactive.
 
 ### Data Directory
 

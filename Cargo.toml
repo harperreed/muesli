@@ -25,8 +25,18 @@ rand = "0.8"
 anyhow = "1.0"
 thiserror = "1.0"
 
+# Keychain + crypto (Granola session decryption)
+keyring = "2.3"
+aes = "0.8"
+cbc = "0.1"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+hmac = "0.12"
+sha1 = "0.10"
+base64 = "0.22"
+zeroize = { version = "1.7", features = ["zeroize_derive"] }
+
 # Optional features (will add later)
-keyring = { version = "2.3", optional = true }
 async-openai = { version = "0.20", optional = true }
 tokio = { version = "1.37", features = ["rt", "macros"], optional = true }
 tantivy = { version = "0.22", optional = true }
@@ -53,7 +63,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = ["index", "summaries", "embeddings", "mcp", "storage", "tui"]
-summaries = ["dep:keyring", "dep:async-openai", "dep:tokio"]
+summaries = ["dep:async-openai", "dep:tokio"]
 index = ["dep:tantivy"]
 embeddings = ["index", "dep:ort", "dep:tokenizers", "dep:rayon", "dep:hnsw_rs", "dep:ndarray"]
 mcp = ["dep:rmcp", "dep:schemars", "dep:tokio"]
