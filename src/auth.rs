@@ -36,6 +36,25 @@ fn try_session_file() -> Result<Option<String>> {
 }
 
 fn parse_session_file(path: &PathBuf) -> Result<Option<String>> {
+    // Granola's newer builds encrypt the session blob via Electron safeStorage
+    // and stop updating the plaintext supabase.json. If the encrypted sibling
+    // exists, the plaintext file (when present) is a stale leftover whose JWT
+    // is long revoked — using it yields a confusing 401 from the API layer.
+    // Refuse to use it and surface an actionable error instead.
+    let enc_path = {
+        let mut os = path.as_os_str().to_owned();
+        os.push(".enc");
+        PathBuf::from(os)
+    };
+    if enc_path.exists() {
+        return Err(Error::Auth(format!(
+            "Granola now stores its session encrypted at {}. \
+             muesli does not yet support decrypting it. \
+             Pass a token via --token <TOKEN> or set BEARER_TOKEN in the environment.",
+            enc_path.display()
+        )));
+    }
+
     if !path.exists() {
         return Ok(None);
     }
@@ -94,5 +113,44 @@ mod tests {
 
         let token = parse_session_file(&session_path).unwrap();
         assert!(token.is_none());
+    }
+
+    #[test]
+    fn test_parse_session_file_errors_when_encrypted_sibling_exists() {
+        // Granola moved to encrypted session storage. When supabase.json.enc
+        // exists, the plaintext supabase.json is a stale leftover and using
+        // it produces 401s. Surface a clear Auth error instead of silently
+        // returning a dead token.
+        let temp = TempDir::new().unwrap();
+        let session_path = temp.path().join("supabase.json");
+        let enc_path = temp.path().join("supabase.json.enc");
+
+        // Stale plaintext (would otherwise parse and return a token).
+        let stale = r#"{"workos_tokens": "{\"access_token\": \"stale_token\"}"}"#;
+        fs::write(&session_path, stale).unwrap();
+        // Newer encrypted blob present.
+        fs::write(&enc_path, b"\xf3\x24\xe6\x50binary").unwrap();
+
+        let err = parse_session_file(&session_path).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("encrypt"),
+            "error should mention encryption: {msg}"
+        );
+        assert!(
+            msg.contains("BEARER_TOKEN") || msg.contains("--token"),
+            "error should point at the workaround: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_parse_session_file_errors_when_only_encrypted_exists() {
+        let temp = TempDir::new().unwrap();
+        let session_path = temp.path().join("supabase.json");
+        let enc_path = temp.path().join("supabase.json.enc");
+        fs::write(&enc_path, b"\xf3\x24\xe6\x50binary").unwrap();
+
+        let err = parse_session_file(&session_path).unwrap_err();
+        assert!(err.to_string().contains("encrypt"));
     }
 }

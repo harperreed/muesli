@@ -280,6 +280,8 @@ Muesli checks for credentials in this order:
 2. `BEARER_TOKEN` environment variable
 3. `~/Library/Application Support/Granola/supabase.json` (auto-detected from Granola desktop app)
 
+> **Note:** Recent Granola builds encrypt the session at `supabase.json.enc` via Electron `safeStorage`. muesli does not yet decrypt this file. When the encrypted file is present, auto-detection is disabled and you must provide a token via `--token` or `BEARER_TOKEN`.
+
 ### Data Directory
 
 Override the default data directory:
