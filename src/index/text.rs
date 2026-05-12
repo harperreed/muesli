@@ -633,7 +633,7 @@ mod tests {
                 "This document contains the word test for searching.",
                 Path::new(&format!("/test/doc{}.md", i)),
             )
-            .expect(&format!("Failed to index doc{}", i));
+            .unwrap_or_else(|_| panic!("Failed to index doc{}", i));
         }
 
         // Search with limit 3

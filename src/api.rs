@@ -351,7 +351,7 @@ mod tests {
         let mut seen_ids = HashSet::new();
 
         // First batch: all new IDs — should continue paginating
-        let batch1 = vec!["doc1", "doc2", "doc3"];
+        let batch1 = ["doc1", "doc2", "doc3"];
         let new_count: usize = batch1
             .iter()
             .filter(|id| seen_ids.insert(id.to_string()))
@@ -360,7 +360,7 @@ mod tests {
         assert!(new_count > 0, "should continue paginating");
 
         // Second batch: all duplicates — should trigger break
-        let batch2 = vec!["doc1", "doc2", "doc3"];
+        let batch2 = ["doc1", "doc2", "doc3"];
         let new_count: usize = batch2
             .iter()
             .filter(|id| seen_ids.insert(id.to_string()))
@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(new_count, 0, "no new docs — should break");
 
         // Mixed batch: some new, some old — should continue
-        let batch3 = vec!["doc1", "doc4"];
+        let batch3 = ["doc1", "doc4"];
         let new_count: usize = batch3
             .iter()
             .filter(|id| seen_ids.insert(id.to_string()))
