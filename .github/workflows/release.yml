@@ -18,22 +18,29 @@ jobs:
     strategy:
       matrix:
         include:
+          # Linux: skip `embeddings` because ort's prebuilt onnxruntime archive
+          # references glibc 2.38+ symbols that aren't available on Bookworm/Ubuntu 22.04.
+          # Tracked separately for parity; see follow-up issue.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             artifact_name: muesli
             asset_name: muesli-linux-x86_64
+            features: "--no-default-features --features index,summaries,mcp,storage,tui"
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: muesli
             asset_name: muesli-linux-aarch64
+            features: "--no-default-features --features index,summaries,mcp,storage,tui"
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: muesli
             asset_name: muesli-macos-aarch64
+            features: "--all-features"
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: muesli.exe
             asset_name: muesli-windows-x86_64.exe
+            features: "--all-features"
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +51,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --all-features --target ${{ matrix.target }}
+        run: cargo build --release ${{ matrix.features }} --target ${{ matrix.target }}
 
       - name: Strip binary (Unix)
         if: runner.os != 'Windows'
