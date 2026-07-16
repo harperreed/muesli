@@ -424,7 +424,7 @@ pub fn sync_all(
             if needs_embedding {
                 // Combine title and body for embedding
                 let text_for_embedding = if let Some(title) = meta.title.as_deref() {
-                    format!("{}\n\n{}", title, &md.body)
+                    format!("{}\n\n{}", title, md.body)
                 } else {
                     md.body.clone()
                 };
