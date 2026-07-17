@@ -278,10 +278,21 @@ Muesli checks for credentials in this order:
 
 1. `--token` flag (explicit override)
 2. `BEARER_TOKEN` environment variable
-3. `~/Library/Application Support/Granola/supabase.json.enc` (decrypted on the fly using the macOS Keychain)
-4. `~/Library/Application Support/Granola/supabase.json` (plaintext fallback for older Granola builds)
+3. **Refresh-token flow** — a stored refresh token (`<data-dir>/auth.json`) is exchanged for a fresh access token via Granola's `/v1/refresh-access-token` endpoint
+4. Legacy session file — `~/Library/Application Support/Granola/supabase.json.enc` (decrypted via the macOS Keychain) or the plaintext `supabase.json` (older Granola builds)
 
-Newer Granola builds encrypt the session at rest. The first auto-detected sync prompts macOS to grant Keychain access to the `Granola Safe Storage` entry — clicking "Always Allow" makes subsequent runs non-interactive.
+**Recent Granola builds (≈v7.4+) moved the session key out of reach.** The desktop app now migrates its session key (`storage.dek`) into an entitlement-gated macOS Keychain item (access group `QZ7DHHLN25.granola`) that only Granola-signed code can read, and deletes the file. muesli can no longer decrypt `supabase.json.enc`, so it authenticates the way the app itself refreshes instead: it exchanges a **refresh token** for short-lived access tokens.
+
+On first run muesli bootstraps the refresh token from the leftover plaintext `supabase.json` (still present on most upgraded installs), then persists the rotating token to `<data-dir>/auth.json` (`0600`) and owns the rotation chain from then on — no Keychain prompt, and Granola no longer needs to be running.
+
+If no plaintext `supabase.json` exists (e.g. a fresh post-migration install), provide a refresh token manually:
+
+```bash
+muesli auth --set "<refresh-token>"   # store a refresh token
+muesli auth                            # show current auth status
+```
+
+You can obtain a refresh token from a machine that still has the plaintext `supabase.json`, or from the app's network traffic (`workos_tokens.refresh_token`).
 
 ### Data Directory
 
