@@ -168,12 +168,29 @@ fn save_refresh_token(auth_path: &Path, token: &str) -> Result<()> {
         refresh_token: token.to_string(),
     };
     let json = serde_json::to_string(&store)?;
-    fs::write(auth_path, json)?;
+
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        // Create with 0600 up front so the secret is never briefly readable at
+        // the default umask between write and chmod.
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(auth_path)?;
+        file.write_all(json.as_bytes())?;
+        // mode() only applies when the file is created; enforce 0600 on a
+        // pre-existing file that may have had looser permissions.
         fs::set_permissions(auth_path, fs::Permissions::from_mode(0o600))?;
     }
+    #[cfg(not(unix))]
+    {
+        fs::write(auth_path, json)?;
+    }
+
     Ok(())
 }
 
