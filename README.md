@@ -1,5 +1,8 @@
 # Muesli
 
+> [!WARNING]
+> **Muesli is no longer useful.** Granola removed the local data access method Muesli relied on. Please use [Granola’s official API](https://docs.granola.ai/introduction) instead—or use [MsgVault](https://github.com/wesm/msgvault), which is really nice.
+
 **A fast, offline-first Rust CLI for syncing and searching Granola meeting transcripts**
 
 [![CI](https://github.com/harperreed/muesli/workflows/CI/badge.svg)](https://github.com/harperreed/muesli/actions)
