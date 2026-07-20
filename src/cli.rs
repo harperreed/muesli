@@ -63,6 +63,13 @@ pub enum Commands {
         reindex: bool,
     },
 
+    /// Manage the Granola refresh token used for auth
+    Auth {
+        /// Store a refresh token obtained out-of-band (overwrites any existing)
+        #[arg(long)]
+        set: Option<String>,
+    },
+
     /// List all documents
     List,
 

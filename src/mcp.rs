@@ -265,7 +265,12 @@ impl MuesliMcpService {
         let token = if let Some(ref t) = params.0.token {
             t.clone()
         } else {
-            crate::auth::resolve_token(None).map_err(|e| {
+            crate::auth::resolve_token(
+                None,
+                "https://api.granola.ai",
+                Some(self.paths.data_dir.as_path()),
+            )
+            .map_err(|e| {
                 McpError::internal_error(format!("Failed to resolve auth token: {}", e), None)
             })?
         };

@@ -43,6 +43,14 @@ fn run() -> Result<()> {
                 sync_all(&client, &paths, false, force)?;
             }
         }
+        Some(muesli::cli::Commands::Auth { set }) => {
+            let data_dir = cli.data_dir.as_deref();
+            if let Some(token) = set {
+                muesli::refresh::set_refresh_token(data_dir, &token)?;
+                println!("Stored refresh token.");
+            }
+            println!("{}", muesli::refresh::status(data_dir)?);
+        }
         Some(muesli::cli::Commands::List) => {
             let client = create_client(&cli)?;
             let docs = client.list_documents()?;
@@ -588,7 +596,7 @@ fn run_text_search(paths: &Paths, query: &str, limit: usize) -> muesli::Result<(
 
 /// Creates an API client with auth and throttle configuration from CLI flags.
 fn create_client(cli: &Cli) -> Result<ApiClient> {
-    let token = resolve_token(cli.token.clone())?;
+    let token = resolve_token(cli.token.clone(), &cli.api_base, cli.data_dir.as_deref())?;
     let mut client = ApiClient::new(token, Some(cli.api_base.clone()))?;
 
     if cli.no_throttle {
